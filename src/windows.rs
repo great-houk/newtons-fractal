@@ -1,28 +1,57 @@
 // All Used Windows
 
-trait SDL2Window<T> {
-    fn init() -> Result<T, String> {
-        // Stuff
+use sdl2::render::{Canvas, TextureCreator};
+use sdl2::video::{Window, WindowContext};
 
-        let ret = Self::start()?;
-        Ok(ret)
+struct SDL2Window {
+    window: Window,
+    canvas: Canvas<Window>,
+    texture_creator: TextureCreator<WindowContext>,
+}
+
+impl SDL2Window {
+    fn init(
+        video_subsystem: sdl2::VideoSubsystem,
+        title: &'static str,
+        width: u32,
+        height: u32,
+    ) -> Result<SDL2Window, String> {
+        let window = video_subsystem
+            .window(title, width, height)
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let mut canvas = window
+            .into_canvas()
+            .present_vsync()
+            .build()
+            .map_err(|e| e.to_string())?;
+
+        let texture_creator = canvas.texture_creator();
+
+        Ok(SDL2Window {
+            window,
+            canvas,
+            texture_creator,
+        })
     }
-
-    fn start() -> Result<T, String>;
 }
 
 pub mod GraphingWindow {
+    use super::SDL2Window;
+
     pub struct Window {
-        // todo
+        raw: SDL2Window,
     }
 
-    impl super::SDL2Window<Window> for Window {
-        fn start() -> Result<Window, String> {
-            Ok(Window {})
-        }
-    }
+    pub fn init<'a>(
+        video_subsystem: sdl2::VideoSubsystem,
+        title: &'static str,
+        width: u32,
+        height: u32,
+    ) -> Result<&'a Window, String> {
+        let window = SDL2Window::init(video_subsystem, title, width, height)?;
 
-    pub fn init<'a>() -> Result<&'a Window, String> {
-        Ok(&Window {})
+        Ok(&Window { raw: window })
     }
 }
