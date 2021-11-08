@@ -1,9 +1,3 @@
-extern crate sdl2;
-
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
-use std::time::Instant;
-
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
 
