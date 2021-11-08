@@ -1,7 +1,15 @@
+extern crate sdl2;
+mod windows;
+
+use windows::GraphingWindow;
+
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
+    let sdl_context = sdl2::init()?;
+    let video_subsystem = sdl_context.video()?;
 
     // Call Main Window Init and Open Function from windows.rs
+    let main_window = GraphingWindow::init()?;
 
     // Call Settings Window Init from windows.rs
 
