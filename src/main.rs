@@ -1,7 +1,8 @@
 extern crate sdl2;
 mod windows;
 
-use windows::GraphingWindow;
+use sdl2::video::WindowPos;
+use windows::graphing_window;
 
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
@@ -9,7 +10,14 @@ pub fn main() -> Result<(), String> {
     let video_subsystem = sdl_context.video()?;
 
     // Call Main Window Init and Open Function from windows.rs
-    let main_window = GraphingWindow::init()?;
+    let main_window = graphing_window::init(
+        video_subsystem,
+        "Main Window",
+        300,
+        300,
+        WindowPos::Centered,
+        WindowPos::Centered,
+    )?;
 
     // Call Settings Window Init from windows.rs
 
@@ -38,8 +46,4 @@ pub fn main() -> Result<(), String> {
      */
 
     Ok(())
-}
-
-fn test(i: usize) {
-    let arr = vec![[0; 3]; i];
 }
