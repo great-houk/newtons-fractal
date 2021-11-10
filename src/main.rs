@@ -34,7 +34,8 @@ pub fn main() -> Result<(), String> {
 
     // Start the event loop and pass the events to the proper threads,
     // As well as wait for any draw requests from the drawing thread
-    let mut event_pump = sdl_context.event_pump().map_err(|e| e.to_string())?;
+    let mut event_pump = sdl_context.event_pump()?;
+    let mut num_frames = 0;
     'running: loop {
         let now = Instant::now();
 
@@ -69,7 +70,10 @@ pub fn main() -> Result<(), String> {
         // If so, copy and present it
 
         let framerate = 1000000. / now.elapsed().as_micros() as f64;
-        println!("Framerate: {}", framerate);
+        if num_frames % (framerate as i32 + 1) == 0 {
+            println!("Framerate: {}", framerate);
+        }
+        num_frames += 1;
     }
 
     // Triangle of messaging

@@ -5,54 +5,121 @@ mod basic_window {
     use sdl2::render::Canvas;
     use sdl2::video::{Window, WindowPos};
 
+    pub struct BasicWindowBuilder<'a> {
+        video_subsystem: &'a sdl2::VideoSubsystem,
+        title: &'static str,
+        width: u32,
+        min_width: Option<u32>,
+        max_width: Option<u32>,
+        height: u32,
+        min_height: Option<u32>,
+        max_height: Option<u32>,
+        posx: WindowPos,
+        posy: WindowPos,
+        resizable: bool,
+        hidden: bool,
+        borderless: bool,
+        fullscreen: bool,
+    }
+
+    #[allow(dead_code)]
+    impl BasicWindowBuilder<'_> {
+        pub fn new<'a>(
+            video_subsystem: &'a sdl2::VideoSubsystem,
+            title: &'static str,
+            width: u32,
+            height: u32,
+        ) -> BasicWindowBuilder<'a> {
+            BasicWindowBuilder {
+                video_subsystem,
+                title,
+                width,
+                min_width: None,
+                max_width: None,
+                height,
+                min_height: None,
+                max_height: None,
+                posx: WindowPos::Centered,
+                posy: WindowPos::Centered,
+                resizable: false,
+                hidden: false,
+                borderless: false,
+                fullscreen: false,
+            }
+        }
+
+        pub fn set_min_size(&mut self, width: Option<u32>, height: Option<u32>) -> &mut Self {
+            self.min_width = width;
+            self.min_height = height;
+            self
+        }
+
+        pub fn set_max_size(&mut self, width: Option<u32>, height: Option<u32>) -> &mut Self {
+            self.max_width = width;
+            self.max_height = height;
+            self
+        }
+
+        pub fn set_position(&mut self, posx: WindowPos, posy: WindowPos) -> &mut Self {
+            self.posx = posx;
+            self.posy = posy;
+            self
+        }
+
+        pub fn set_resizable(&mut self, b: bool) -> &mut Self {
+            self.resizable = b;
+            self
+        }
+        pub fn set_hidden(&mut self, b: bool) -> &mut Self {
+            self.hidden = b;
+            self
+        }
+        pub fn set_borderless(&mut self, b: bool) -> &mut Self {
+            self.borderless = b;
+            self
+        }
+        pub fn set_fullscreen(&mut self, b: bool) -> &mut Self {
+            self.fullscreen = b;
+            self
+        }
+        pub fn build(&self) -> Result<BasicWindow, String> {
+            BasicWindow::init(self)
+        }
+    }
+
     pub struct BasicWindow {
         pub canvas: Canvas<Window>,
     }
     impl BasicWindow {
-        pub fn init(
-            video_subsystem: &sdl2::VideoSubsystem,
-            title: &'static str,
-            width: u32,
-            min_width: Option<u32>,
-            max_width: Option<u32>,
-            height: u32,
-            min_height: Option<u32>,
-            max_height: Option<u32>,
-            posx: WindowPos,
-            posy: WindowPos,
-            resizable: bool,
-            hidden: bool,
-            borderless: bool,
-            fullscreen: bool,
-        ) -> Result<BasicWindow, String> {
+        fn init(b: &BasicWindowBuilder) -> Result<BasicWindow, String> {
             let mut window = {
-                let mut win = video_subsystem.window(title, width, height);
+                let mut win = b.video_subsystem.window(b.title, b.width, b.height);
                 win.position(
-                    BasicWindow::to_ll_windowpos(posx),
-                    BasicWindow::to_ll_windowpos(posy),
+                    BasicWindow::to_ll_windowpos(b.posx),
+                    BasicWindow::to_ll_windowpos(b.posy),
                 );
-                if resizable {
+                if b.resizable {
                     win.resizable();
                 }
-                if hidden {
+                if b.hidden {
                     win.hidden();
                 }
-                if borderless {
+                if b.borderless {
                     win.borderless();
                 }
-                if fullscreen {
+                if b.fullscreen {
                     win.fullscreen();
                 }
                 win.build().map_err(|e| e.to_string())?
             };
-            match (min_width, min_height) {
+            match (b.min_width, b.min_height) {
                 (Some(wid), Some(hei)) => window.set_minimum_size(wid, hei),
                 (None, Some(hei)) => window.set_minimum_size(0, hei),
                 (Some(wid), None) => window.set_minimum_size(wid, 0),
                 (None, None) => Ok(()),
             }
             .map_err(|e| e.to_string())?;
-            match (max_width, max_height) {
+            match (b.max_width, b.max_height) {
                 (Some(wid), Some(hei)) => window.set_maximum_size(wid, hei),
                 (None, Some(hei)) => window.set_maximum_size(0, hei),
                 (Some(wid), None) => window.set_maximum_size(wid, 0),
@@ -83,7 +150,7 @@ mod basic_window {
 }
 
 mod graphing_window {
-    use super::basic_window::BasicWindow;
+    use super::basic_window::{BasicWindow, BasicWindowBuilder};
     use sdl2::pixels::PixelFormatEnum;
     use sdl2::render::Texture;
     use sdl2::video::{Window, WindowPos};
@@ -104,22 +171,11 @@ mod graphing_window {
             posy: WindowPos,
             // iconPath: Option<>
         ) -> Result<GraphingWindow, String> {
-            let window = BasicWindow::init(
-                video_subsystem,
-                title,
-                width,
-                Some(500),
-                None,
-                height,
-                Some(500),
-                None,
-                posx,
-                posy,
-                true,
-                false,
-                false,
-                false,
-            )?;
+            let window = BasicWindowBuilder::new(video_subsystem, title, width, height)
+                .set_min_size(Some(500), Some(500))
+                .set_position(posx, posy)
+                .set_resizable(true)
+                .build()?;
 
             let (main_texture, graphing_texture) = {
                 let canv = &window.canvas;
