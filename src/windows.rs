@@ -146,6 +146,19 @@ mod graphing_window {
                 .set_size(size, size)
                 .map_err(|e| e.to_string())?;
 
+            let (main_texture, graphing_texture) = {
+                let canv = &self.raw.canvas;
+                let m = canv
+                    .create_texture_target(None, size, size)
+                    .map_err(|e| e.to_string())?;
+                let g = canv
+                    .create_texture_streaming(PixelFormatEnum::ABGR8888, size, size)
+                    .map_err(|e| e.to_string())?;
+                (m, g)
+            };
+            self.main_texture = main_texture;
+            self.graphing_texture = graphing_texture;
+
             Ok(())
         }
 
