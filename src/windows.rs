@@ -2,16 +2,15 @@
 pub use self::graphing_window::GraphingWindow;
 
 mod basic_window {
-    use sdl2::render::{Canvas, TextureCreator};
-    use sdl2::video::{Window, WindowContext, WindowPos};
+    use sdl2::render::Canvas;
+    use sdl2::video::{Window, WindowPos};
 
     pub struct BasicWindow {
-        canvas: Canvas<Window>,
-        texture_creator: TextureCreator<WindowContext>,
+        pub canvas: Canvas<Window>,
     }
     impl BasicWindow {
         pub fn init(
-            video_subsystem: sdl2::VideoSubsystem,
+            video_subsystem: &sdl2::VideoSubsystem,
             title: &'static str,
             width: u32,
             min_width: Option<u32>,
@@ -65,13 +64,12 @@ mod basic_window {
                 .present_vsync()
                 .build()
                 .map_err(|e| e.to_string())?;
-            let texture_creator = canvas.texture_creator();
-            Ok(BasicWindow {
-                canvas,
-                texture_creator,
-            })
+            Ok(BasicWindow { canvas })
         }
-        pub fn window(&mut self) -> &mut Window {
+        pub fn window(&self) -> &Window {
+            self.canvas.window()
+        }
+        pub fn window_mut(&mut self) -> &mut Window {
             self.canvas.window_mut()
         }
         fn to_ll_windowpos(pos: WindowPos) -> i32 {
@@ -86,15 +84,19 @@ mod basic_window {
 
 mod graphing_window {
     use super::basic_window::BasicWindow;
+    use sdl2::pixels::PixelFormatEnum;
+    use sdl2::render::Texture;
     use sdl2::video::{Window, WindowPos};
 
     pub struct GraphingWindow {
         raw: BasicWindow,
+        main_texture: Texture,
+        graphing_texture: Texture,
     }
 
     impl GraphingWindow {
         pub fn init(
-            video_subsystem: sdl2::VideoSubsystem,
+            video_subsystem: &sdl2::VideoSubsystem,
             title: &'static str,
             width: u32,
             height: u32,
@@ -119,21 +121,39 @@ mod graphing_window {
                 false,
             )?;
 
-            Ok(GraphingWindow { raw: window })
+            let (main_texture, graphing_texture) = {
+                let canv = &window.canvas;
+                let m = canv
+                    .create_texture_target(None, width, height)
+                    .map_err(|e| e.to_string())?;
+                let g = canv
+                    .create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
+                    .map_err(|e| e.to_string())?;
+                (m, g)
+            };
+
+            Ok(GraphingWindow {
+                raw: window,
+                main_texture,
+                graphing_texture,
+            })
         }
 
         pub fn resized(&mut self, width: u32, height: u32) -> Result<(), String> {
             let size = (width as f32 * height as f32).sqrt() as u32;
 
-            self.window()
+            self.window_mut()
                 .set_size(size, size)
                 .map_err(|e| e.to_string())?;
 
             Ok(())
         }
 
-        pub fn window(&mut self) -> &mut Window {
+        pub fn window(&self) -> &Window {
             self.raw.window()
+        }
+        pub fn window_mut(&mut self) -> &mut Window {
+            self.raw.window_mut()
         }
     }
 }

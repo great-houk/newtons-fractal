@@ -15,7 +15,7 @@ pub fn main() -> Result<(), String> {
 
     // Call Main Window Init and Open Function from windows.rs
     let mut main_window = GraphingWindow::init(
-        video_subsystem,
+        &video_subsystem,
         "Main Window",
         300,
         300,
