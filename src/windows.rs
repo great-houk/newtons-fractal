@@ -1,5 +1,37 @@
 // All Used Windows
 pub use self::graphing_window::GraphingWindow;
+pub use self::safe_texture::SafeTexture;
+
+mod safe_texture {
+    use sdl2::render::Texture;
+    use std::ops::{Deref, DerefMut};
+    use std::sync::Mutex;
+
+    #[repr(transparent)]
+    pub struct SafeTexture(Mutex<Texture>);
+
+    impl SafeTexture {
+        pub fn new(texture: Texture) -> Self {
+            SafeTexture(Mutex::new(texture))
+        }
+    }
+
+    impl Deref for SafeTexture {
+        type Target = Mutex<Texture>;
+        fn deref(&self) -> &Mutex<Texture> {
+            &self.0
+        }
+    }
+
+    impl DerefMut for SafeTexture {
+        fn deref_mut(&mut self) -> &mut Mutex<Texture> {
+            &mut self.0
+        }
+    }
+
+    unsafe impl Send for SafeTexture {}
+    unsafe impl Sync for SafeTexture {}
+}
 
 mod basic_window {
     use sdl2::render::Canvas;
@@ -154,15 +186,15 @@ mod basic_window {
 
 mod graphing_window {
     use super::basic_window::{BasicWindow, BasicWindowBuilder};
+    use super::safe_texture::SafeTexture;
     use sdl2::pixels::PixelFormatEnum;
-    use sdl2::render::Texture;
     use sdl2::video::{Window, WindowPos};
-    use std::sync::{mpsc, Arc, Mutex};
+    use std::sync::{mpsc, Arc};
 
     pub struct GraphingWindow {
         raw: BasicWindow,
-        main_texture: Arc<Mutex<Texture>>,
-        graphing_texture: Arc<Mutex<Texture>>,
+        main_texture: Arc<SafeTexture>,
+        graphing_texture: Arc<SafeTexture>,
         signaler: Option<mpsc::Sender<bool>>,
     }
 
@@ -184,15 +216,13 @@ mod graphing_window {
 
             let (main_texture, graphing_texture) = {
                 let canv = &window.canvas;
-                let m = Arc::new(Mutex::new(
-                    canv.create_texture_target(None, width, height)
-                        .map_err(|e| e.to_string())?,
-                ));
-                let g = Arc::new(Mutex::new(
-                    canv.create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
-                        .map_err(|e| e.to_string())?,
-                ));
-                (m, g)
+                let m = canv
+                    .create_texture_target(None, width, height)
+                    .map_err(|e| e.to_string())?;
+                let g = canv
+                    .create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
+                    .map_err(|e| e.to_string())?;
+                (Arc::new(SafeTexture::new(m)), Arc::new(SafeTexture::new(g)))
             };
 
             Ok(GraphingWindow {
@@ -212,15 +242,13 @@ mod graphing_window {
 
             let (main_texture, graphing_texture) = {
                 let canv = &self.raw.canvas;
-                let m = Arc::new(Mutex::new(
-                    canv.create_texture_target(None, width, height)
-                        .map_err(|e| e.to_string())?,
-                ));
-                let g = Arc::new(Mutex::new(
-                    canv.create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
-                        .map_err(|e| e.to_string())?,
-                ));
-                (m, g)
+                let m = canv
+                    .create_texture_target(None, width, height)
+                    .map_err(|e| e.to_string())?;
+                let g = canv
+                    .create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
+                    .map_err(|e| e.to_string())?;
+                (Arc::new(SafeTexture::new(m)), Arc::new(SafeTexture::new(g)))
             };
             self.main_texture = main_texture;
             self.graphing_texture = graphing_texture;
@@ -239,11 +267,7 @@ mod graphing_window {
         }
         pub fn get_textures(
             &mut self,
-        ) -> (
-            Arc<Mutex<Texture>>,
-            Arc<Mutex<Texture>>,
-            mpsc::Receiver<bool>,
-        ) {
+        ) -> (Arc<SafeTexture>, Arc<SafeTexture>, mpsc::Receiver<bool>) {
             let (tx, rx) = mpsc::channel();
             self.signaler = Some(tx);
             (self.main_texture.clone(), self.graphing_texture.clone(), rx)

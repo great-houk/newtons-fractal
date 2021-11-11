@@ -6,6 +6,7 @@ mod windows;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use sdl2::video::WindowPos;
+use std::thread;
 use std::time::Instant;
 use windows::GraphingWindow;
 
@@ -30,6 +31,7 @@ pub fn main() -> Result<(), String> {
     // Call All Other Window Init Functions from windows.rs
 
     // Make a new thread to handle the drawing logic in logic.rs
+    let main_thread = thread::spawn(|| logic::main_loop(main_textures));
 
     // Make a new thread to handle and process all events,
     // Sending the data off to the required threads, covered in events.rs
