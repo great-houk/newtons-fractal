@@ -72,6 +72,9 @@ mod basic_window {
         pub fn window_mut(&mut self) -> &mut Window {
             self.canvas.window_mut()
         }
+        pub fn present(&mut self) {
+            self.canvas.present()
+        }
         fn to_ll_windowpos(pos: WindowPos) -> i32 {
             match pos {
                 WindowPos::Undefined => sdl2_sys::SDL_WINDOWPOS_UNDEFINED_MASK as i32,
@@ -87,11 +90,12 @@ mod graphing_window {
     use sdl2::pixels::PixelFormatEnum;
     use sdl2::render::Texture;
     use sdl2::video::{Window, WindowPos};
+    use std::sync::{Arc, Mutex};
 
     pub struct GraphingWindow {
         raw: BasicWindow,
-        main_texture: Texture,
-        graphing_texture: Texture,
+        main_texture: Arc<Mutex<Texture>>,
+        graphing_texture: Arc<Mutex<Texture>>,
     }
 
     impl GraphingWindow {
@@ -123,12 +127,14 @@ mod graphing_window {
 
             let (main_texture, graphing_texture) = {
                 let canv = &window.canvas;
-                let m = canv
-                    .create_texture_target(None, width, height)
-                    .map_err(|e| e.to_string())?;
-                let g = canv
-                    .create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
-                    .map_err(|e| e.to_string())?;
+                let m = Arc::new(Mutex::new(
+                    canv.create_texture_target(None, width, height)
+                        .map_err(|e| e.to_string())?,
+                ));
+                let g = Arc::new(Mutex::new(
+                    canv.create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
+                        .map_err(|e| e.to_string())?,
+                ));
                 (m, g)
             };
 
@@ -148,12 +154,14 @@ mod graphing_window {
 
             let (main_texture, graphing_texture) = {
                 let canv = &self.raw.canvas;
-                let m = canv
-                    .create_texture_target(None, size, size)
-                    .map_err(|e| e.to_string())?;
-                let g = canv
-                    .create_texture_streaming(PixelFormatEnum::ABGR8888, size, size)
-                    .map_err(|e| e.to_string())?;
+                let m = Arc::new(Mutex::new(
+                    canv.create_texture_target(None, width, height)
+                        .map_err(|e| e.to_string())?,
+                ));
+                let g = Arc::new(Mutex::new(
+                    canv.create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
+                        .map_err(|e| e.to_string())?,
+                ));
                 (m, g)
             };
             self.main_texture = main_texture;
@@ -167,6 +175,12 @@ mod graphing_window {
         }
         pub fn window_mut(&mut self) -> &mut Window {
             self.raw.window_mut()
+        }
+        pub fn present(&mut self) {
+            self.raw.present()
+        }
+        pub fn get_textures(&self) -> (Arc<Mutex<Texture>>, Arc<Mutex<Texture>>) {
+            (self.main_texture.clone(), self.graphing_texture.clone())
         }
     }
 }

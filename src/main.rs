@@ -5,7 +5,7 @@ mod windows;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use sdl2::video::WindowPos;
-use std::time::Instant;
+// use std::time::Instant;
 use windows::GraphingWindow;
 
 pub fn main() -> Result<(), String> {
@@ -22,6 +22,7 @@ pub fn main() -> Result<(), String> {
         WindowPos::Centered,
         WindowPos::Centered,
     )?;
+    let main_textures = main_window.get_textures();
 
     // Call Settings Window Init from windows.rs
 
@@ -36,7 +37,7 @@ pub fn main() -> Result<(), String> {
     // As well as wait for any draw requests from the drawing thread
     let mut event_pump = sdl_context.event_pump().map_err(|e| e.to_string())?;
     'running: loop {
-        let now = Instant::now();
+        // let now = Instant::now();
 
         // Handle Events
         for event in event_pump.poll_iter() {
@@ -67,9 +68,10 @@ pub fn main() -> Result<(), String> {
 
         // See if there are any frames to grab
         // If so, copy and present it
+        main_window.present();
 
-        let framerate = 1000000. / now.elapsed().as_micros() as f64;
-        println!("Framerate: {}", framerate);
+        // let framerate = 1000000. / now.elapsed().as_micros() as f64;
+        // println!("Framerate: {}", framerate);
     }
 
     // Triangle of messaging
