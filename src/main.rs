@@ -24,14 +24,14 @@ pub fn main() -> Result<(), String> {
         WindowPos::Centered,
         WindowPos::Centered,
     )?;
-    let main_textures = main_window.get_textures();
+    let main_data = main_window.get_textures();
 
     // Call Settings Window Init from windows.rs
 
     // Call All Other Window Init Functions from windows.rs
 
     // Make a new thread to handle the drawing logic in logic.rs
-    let main_thread = thread::spawn(|| logic::main_loop(main_textures));
+    let main_thread = thread::spawn(|| logic::main_loop(main_data));
 
     // Make a new thread to handle and process all events,
     // Sending the data off to the required threads, covered in events.rs
