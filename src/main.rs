@@ -1,5 +1,6 @@
 extern crate sdl2;
 mod events;
+mod logic;
 mod windows;
 
 use sdl2::event::{Event, WindowEvent};

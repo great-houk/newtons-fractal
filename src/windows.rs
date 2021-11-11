@@ -157,12 +157,13 @@ mod graphing_window {
     use sdl2::pixels::PixelFormatEnum;
     use sdl2::render::Texture;
     use sdl2::video::{Window, WindowPos};
-    use std::sync::{Arc, Mutex};
+    use std::sync::{mpsc, Arc, Mutex};
 
     pub struct GraphingWindow {
         raw: BasicWindow,
         main_texture: Arc<Mutex<Texture>>,
         graphing_texture: Arc<Mutex<Texture>>,
+        signaler: Option<mpsc::Sender<bool>>,
     }
 
     impl GraphingWindow {
@@ -198,6 +199,7 @@ mod graphing_window {
                 raw: window,
                 main_texture,
                 graphing_texture,
+                signaler: None,
             })
         }
 
@@ -235,8 +237,16 @@ mod graphing_window {
         pub fn present(&mut self) {
             self.raw.present()
         }
-        pub fn get_textures(&self) -> (Arc<Mutex<Texture>>, Arc<Mutex<Texture>>) {
-            (self.main_texture.clone(), self.graphing_texture.clone())
+        pub fn get_textures(
+            &mut self,
+        ) -> (
+            Arc<Mutex<Texture>>,
+            Arc<Mutex<Texture>>,
+            mpsc::Receiver<bool>,
+        ) {
+            let (tx, rx) = mpsc::channel();
+            self.signaler = Some(tx);
+            (self.main_texture.clone(), self.graphing_texture.clone(), rx)
         }
     }
 }
