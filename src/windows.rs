@@ -188,6 +188,7 @@ mod graphing_window {
     use super::basic_window::{BasicWindow, BasicWindowBuilder};
     use super::safe_texture::SafeTexture;
     use sdl2::pixels::PixelFormatEnum;
+    use sdl2::render::BlendMode;
     use sdl2::video::{Window, WindowPos};
     use std::sync::{mpsc, Arc};
 
@@ -240,8 +241,15 @@ mod graphing_window {
                 .set_size(size, size)
                 .map_err(|e| e.to_string())?;
 
+            self.send(false);
+
+            Ok(())
+        }
+
+        pub fn remake_textures(&mut self) -> Result<(), String> {
             let (main_texture, graphing_texture) = {
                 let canv = &self.raw.canvas;
+                let (width, height) = self.raw.canvas.output_size()?;
                 let m = canv
                     .create_texture_target(None, width, height)
                     .map_err(|e| e.to_string())?;
@@ -252,7 +260,6 @@ mod graphing_window {
             };
             self.main_texture = main_texture;
             self.graphing_texture = graphing_texture;
-
             Ok(())
         }
 
@@ -262,15 +269,43 @@ mod graphing_window {
         pub fn window_mut(&mut self) -> &mut Window {
             self.raw.window_mut()
         }
-        pub fn present(&mut self) {
-            self.raw.present()
+        pub fn present(&mut self) -> Result<bool, String> {
+            if let (Ok(mut main_tex), Ok(graph_tex)) = (
+                self.main_texture.try_lock(),
+                self.graphing_texture.try_lock(),
+            ) {
+                // Copy main_tex to graph tex
+                main_tex.set_blend_mode(BlendMode::Blend);
+                self.raw
+                    .canvas
+                    .with_texture_canvas(&mut main_tex, |canv| {
+                        canv.copy(&graph_tex, None, None).unwrap();
+                    })
+                    .map_err(|e| e.to_string())?;
+                // Render things
+                self.raw.canvas.copy(&main_tex, None, None)?;
+                self.send(true);
+                self.raw.present();
+                return Ok(true);
+            }
+            Ok(false)
         }
         pub fn get_textures(
             &mut self,
         ) -> (Arc<SafeTexture>, Arc<SafeTexture>, mpsc::Receiver<bool>) {
             let (tx, rx) = mpsc::channel();
             self.signaler = Some(tx);
+            self.send(true);
             (self.main_texture.clone(), self.graphing_texture.clone(), rx)
+        }
+        // This function doesn't really care if it succeeds or not,
+        // since if it fails the thread will be remade in the proper state anyway
+        #[allow(unused_must_use)]
+        fn send(&self, b: bool) {
+            match self.signaler.as_ref() {
+                Some(sig) => sig.send(b),
+                None => panic!("Unreachable code in windows.rs get_textures()"),
+            };
         }
     }
 }
