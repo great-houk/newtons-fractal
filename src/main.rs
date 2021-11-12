@@ -32,12 +32,15 @@ pub fn main() -> Result<(), String> {
 
     // Call All Other Window Init Functions from windows.rs
 
-    // Set up a thread monitor to make sure thread is always alive
+    // Set up a thread monitor to make sure thread it's always alive
     let mut monitor = Arc::new(AtomicBool::new(true));
     let mut control = Arc::downgrade(&monitor);
 
     // Make a new thread to handle the drawing logic in logic.rs
-    let mut main_thread = Some(thread::spawn(|| logic::main_loop(main_data, monitor)));
+    let (width, height) = main_window.raw.canvas.output_size()?;
+    let mut main_thread = Some(thread::spawn(|| {
+        logic::main_loop(main_data, monitor, width, height)
+    }));
 
     // Make a new thread to handle and process all events,
     // Sending the data off to the required threads, covered in events.rs
@@ -77,7 +80,9 @@ pub fn main() -> Result<(), String> {
                 control = Arc::downgrade(&monitor);
                 main_window.remake_textures()?;
                 let main_data = main_window.get_textures();
-                main_thread = Some(thread::spawn(|| logic::main_loop(main_data, monitor)));
+                main_thread = Some(thread::spawn(|| {
+                    logic::main_loop(main_data, monitor, width, height)
+                }));
             }
         }
 

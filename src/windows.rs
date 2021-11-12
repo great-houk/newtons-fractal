@@ -193,7 +193,7 @@ mod graphing_window {
     use std::sync::{mpsc, Arc};
 
     pub struct GraphingWindow {
-        raw: BasicWindow,
+        pub raw: BasicWindow,
         main_texture: Arc<SafeTexture>,
         graphing_texture: Arc<SafeTexture>,
         signaler: Option<mpsc::Sender<bool>>,
