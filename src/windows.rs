@@ -234,7 +234,7 @@ mod graphing_window {
             })
         }
 
-        pub fn resized(&mut self, width: u32, height: u32) -> Result<(), String> {
+        pub fn resized(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
             let size = (width as f32 * height as f32).sqrt() as u32;
 
             self.window_mut()
@@ -243,7 +243,7 @@ mod graphing_window {
 
             self.send(false);
 
-            Ok(())
+            Ok((size, size))
         }
 
         pub fn remake_textures(&mut self) -> Result<(), String> {
@@ -301,7 +301,7 @@ mod graphing_window {
         // This function doesn't really care if it succeeds or not,
         // since if it fails the thread will be remade in the proper state anyway
         #[allow(unused_must_use)]
-        fn send(&self, b: bool) {
+        pub fn send(&self, b: bool) {
             match self.signaler.as_ref() {
                 Some(sig) => sig.send(b),
                 None => panic!("Unreachable code in windows.rs get_textures()"),

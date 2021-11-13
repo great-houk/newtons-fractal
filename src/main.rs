@@ -21,8 +21,8 @@ pub fn main() -> Result<(), String> {
     let mut main_window = GraphingWindow::init(
         &video_subsystem,
         "Main Window",
-        300,
-        300,
+        500,
+        500,
         WindowPos::Centered,
         WindowPos::Centered,
     )?;
@@ -37,8 +37,8 @@ pub fn main() -> Result<(), String> {
     let mut control = Arc::downgrade(&monitor);
 
     // Make a new thread to handle the drawing logic in logic.rs
-    let (width, height) = main_window.raw.canvas.output_size()?;
-    let mut main_thread = Some(thread::spawn(|| {
+    let (mut width, mut height) = main_window.raw.canvas.output_size()?;
+    let mut main_thread = Some(thread::spawn(move || {
         logic::main_loop(main_data, monitor, width, height)
     }));
 
@@ -65,6 +65,7 @@ pub fn main() -> Result<(), String> {
             }
             // Thread is dead
             None => {
+                println!("Main thread died");
                 match control.upgrade() {
                     Some(working) => (*working).store(false, Ordering::Relaxed),
                     None => (),
@@ -80,7 +81,7 @@ pub fn main() -> Result<(), String> {
                 control = Arc::downgrade(&monitor);
                 main_window.remake_textures()?;
                 let main_data = main_window.get_textures();
-                main_thread = Some(thread::spawn(|| {
+                main_thread = Some(thread::spawn(move || {
                     logic::main_loop(main_data, monitor, width, height)
                 }));
             }
@@ -95,7 +96,15 @@ pub fn main() -> Result<(), String> {
                 | Event::KeyDown {
                     keycode: Some(Keycode::Escape),
                     ..
-                } => break 'running,
+                } => {
+                    main_window.send(false);
+                    main_thread
+                        .take()
+                        .expect("Main thread isn't there")
+                        .join()
+                        .expect("Logic thread panicked")?;
+                    break 'running;
+                }
                 // If a window resizes, then we need to tell it
                 Event::Window {
                     win_event: WindowEvent::Resized(wid, hei),
@@ -103,7 +112,9 @@ pub fn main() -> Result<(), String> {
                     ..
                 } => {
                     if id == main_window.window().id() {
-                        main_window.resized(wid as u32, hei as u32)?;
+                        let (w, h) = main_window.resized(wid as u32, hei as u32)?;
+                        width = w;
+                        height = h;
                     } else {
                         return Err("Window Resize Event Fail".to_string());
                     }
