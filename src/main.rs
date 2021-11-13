@@ -6,7 +6,7 @@ mod windows;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use sdl2::video::WindowPos;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::AtomicBool;
 use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
@@ -66,10 +66,6 @@ pub fn main() -> Result<(), String> {
             // Thread is dead
             None => {
                 println!("Main thread died");
-                match control.upgrade() {
-                    Some(working) => (*working).store(false, Ordering::Relaxed),
-                    None => (),
-                }
                 // Get result from thread
                 main_thread
                     .take()

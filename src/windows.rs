@@ -187,15 +187,12 @@ mod basic_window {
 mod graphing_window {
     use super::basic_window::{BasicWindow, BasicWindowBuilder};
     use super::safe_texture::SafeTexture;
-    use sdl2::pixels::PixelFormatEnum;
-    use sdl2::render::BlendMode;
     use sdl2::video::{Window, WindowPos};
     use std::sync::{mpsc, Arc};
 
     pub struct GraphingWindow {
         pub raw: BasicWindow,
-        main_texture: Arc<SafeTexture>,
-        graphing_texture: Arc<SafeTexture>,
+        texture: Arc<SafeTexture>,
         signaler: Option<mpsc::Sender<bool>>,
     }
 
@@ -215,21 +212,17 @@ mod graphing_window {
                 .set_resizable(true)
                 .build()?;
 
-            let (main_texture, graphing_texture) = {
+            let texture = {
                 let canv = &window.canvas;
                 let m = canv
                     .create_texture_target(None, width, height)
                     .map_err(|e| e.to_string())?;
-                let g = canv
-                    .create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
-                    .map_err(|e| e.to_string())?;
-                (Arc::new(SafeTexture::new(m)), Arc::new(SafeTexture::new(g)))
+                Arc::new(SafeTexture::new(m))
             };
 
             Ok(GraphingWindow {
                 raw: window,
-                main_texture,
-                graphing_texture,
+                texture,
                 signaler: None,
             })
         }
@@ -247,19 +240,15 @@ mod graphing_window {
         }
 
         pub fn remake_textures(&mut self) -> Result<(), String> {
-            let (main_texture, graphing_texture) = {
+            let texture = {
                 let canv = &self.raw.canvas;
                 let (width, height) = self.raw.canvas.output_size()?;
                 let m = canv
                     .create_texture_target(None, width, height)
                     .map_err(|e| e.to_string())?;
-                let g = canv
-                    .create_texture_streaming(PixelFormatEnum::ABGR8888, width, height)
-                    .map_err(|e| e.to_string())?;
-                (Arc::new(SafeTexture::new(m)), Arc::new(SafeTexture::new(g)))
+                Arc::new(SafeTexture::new(m))
             };
-            self.main_texture = main_texture;
-            self.graphing_texture = graphing_texture;
+            self.texture = texture;
             Ok(())
         }
 
@@ -270,33 +259,20 @@ mod graphing_window {
             self.raw.window_mut()
         }
         pub fn present(&mut self) -> Result<bool, String> {
-            if let (Ok(mut main_tex), Ok(graph_tex)) = (
-                self.main_texture.try_lock(),
-                self.graphing_texture.try_lock(),
-            ) {
-                // Copy main_tex to graph tex
-                main_tex.set_blend_mode(BlendMode::Blend);
-                self.raw
-                    .canvas
-                    .with_texture_canvas(&mut main_tex, |canv| {
-                        canv.copy(&graph_tex, None, None).unwrap();
-                    })
-                    .map_err(|e| e.to_string())?;
+            if let Ok(main_tex) = self.texture.try_lock() {
                 // Render things
                 self.raw.canvas.copy(&main_tex, None, None)?;
-                self.send(true);
                 self.raw.present();
+                self.send(true);
                 return Ok(true);
             }
             Ok(false)
         }
-        pub fn get_textures(
-            &mut self,
-        ) -> (Arc<SafeTexture>, Arc<SafeTexture>, mpsc::Receiver<bool>) {
+        pub fn get_textures(&mut self) -> (Arc<SafeTexture>, mpsc::Receiver<bool>) {
             let (tx, rx) = mpsc::channel();
             self.signaler = Some(tx);
             self.send(true);
-            (self.main_texture.clone(), self.graphing_texture.clone(), rx)
+            (self.texture.clone(), rx)
         }
         // This function doesn't really care if it succeeds or not,
         // since if it fails the thread will be remade in the proper state anyway
