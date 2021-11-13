@@ -3,8 +3,8 @@
 pub use render_backend::main_loop;
 
 mod render_backend {
-    use super::super::windows::SafeTexture;
     use super::drawing::{draw_pixel, get_draw_data, Data};
+    use crate::windows::SafeTexture;
     use std::alloc::{alloc, dealloc, Layout, LayoutError};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{
