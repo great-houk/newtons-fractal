@@ -3,18 +3,18 @@
 pub use render_backend::main_loop;
 
 mod drawing {
-    pub type Data = (f64, f64, f64, f64);
+    pub type Data = (f64, f64, f64, f64, f64, String);
 
     pub fn get_draw_data(width: u32, _: u32) -> Data {
         let center = width as f64 / 2.;
         let speed = width as f64 / 500.;
         let period = width as f64 / 10.;
         let pi2 = std::f64::consts::PI * 2.;
-        (center, speed, period, pi2)
+        (center, speed, period, pi2, center, String::default())
     }
 
     pub fn draw_pixel(
-        (center, speed, period, pi2): &Data,
+        (center, speed, period, pi2, _, _): &Data,
         nframes: usize,
         pixel_x: u32,
         pixel_y: u32,
@@ -44,9 +44,9 @@ mod drawing {
         (r, g, b, 255)
     }
 
-    pub fn modify_data((_, speed, ..): &mut Data) {
+    pub fn modify_data((center, .., c, _): &mut Data, nframes: usize) {
         // There's nothing to modify yet
-        *speed += 0.1;
+        *center = *c + (nframes as f64 / 100.).sin() * 100.;
     }
 }
 
@@ -57,7 +57,7 @@ mod render_backend {
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{
         mpsc::{channel, Receiver, Sender},
-        Arc,
+        Arc, RwLock,
     };
     use std::thread::{spawn, JoinHandle};
 
@@ -68,8 +68,9 @@ mod render_backend {
         mut height: u32,
     ) -> Result<(), String> {
         // Initialize all variables
+        let mut nframes = 0;
         let cores = num_cpus::get() * 2;
-        let mut draw_data = Arc::new(get_draw_data(width, height));
+        let mut draw_data = Arc::new(RwLock::new(get_draw_data(width, height)));
         let (mut pixels, mut pixel_slices, mut splits) = init_pixels(width, height, cores)?;
         let (mut handles, mut senders, mut receivers) =
             start_threads(cores, splits, pixel_slices, draw_data.clone(), width)?;
@@ -93,11 +94,13 @@ mod render_backend {
                         .update(None, slice, (width * 4) as usize)
                         .map_err(|e| e.to_string())?;
                     // Allow drawing logic to modify data
-                    let mut mut_data = unsafe { *Arc::as_ptr(&draw_data) };
-                    modify_data(&mut mut_data);
+                    {
+                        let mut mut_data = draw_data.try_write().unwrap();
+                        modify_data(&mut mut_data, nframes);
+                    }
                     // Restart rendering threads
                     for sender in &senders {
-                        sender.send(true).unwrap();
+                        sender.send((true, nframes)).unwrap();
                     }
                 }
                 Ok(Message::Resize {
@@ -109,7 +112,7 @@ mod render_backend {
                     width = wid;
                     height = hei;
                     end_threads(senders, handles)?;
-                    draw_data = Arc::new(get_draw_data(width, height));
+                    draw_data = Arc::new(RwLock::new(get_draw_data(width, height)));
                     let temp = init_pixels(width, height, cores)?;
                     pixels = temp.0;
                     pixel_slices = temp.1;
@@ -129,6 +132,7 @@ mod render_backend {
                     )
                 }
             };
+            nframes += 1;
         }
         // We are stopping, so all sub threads need to stop too
         end_threads(senders, handles)
@@ -138,21 +142,28 @@ mod render_backend {
         cores: usize,
         mut splits: Vec<usize>,
         mut pixel_slices: Vec<&'static mut [u8]>,
-        data: Arc<Data>,
+        data: Arc<RwLock<Data>>,
         width: u32,
-    ) -> Result<(Vec<JoinHandle<()>>, Vec<Sender<bool>>, Vec<Receiver<bool>>), String> {
+    ) -> Result<
+        (
+            Vec<JoinHandle<()>>,
+            Vec<Sender<(bool, usize)>>,
+            Vec<Receiver<bool>>,
+        ),
+        String,
+    > {
         let mut handles = Vec::with_capacity(cores);
         let mut receivers = Vec::with_capacity(cores);
         let mut senders = Vec::with_capacity(cores);
         for _i in 0..cores {
             let slice = pixel_slices.pop().unwrap();
-            let thread_data = data.clone();
             let ind = splits.pop().unwrap();
+            let thread_data = data.clone();
             // let ind = splits[_i]; // Cool bug
             let pitch = width as usize * 4;
             let (ttx, rx) = channel();
             let (tx, trx) = channel();
-            tx.send(true).unwrap();
+            tx.send((true, 0)).unwrap();
             let handle = spawn(move || {
                 draw_loop(ttx, trx, slice, thread_data, ind, pitch);
             });
@@ -163,9 +174,12 @@ mod render_backend {
         Ok((handles, senders, receivers))
     }
 
-    fn end_threads(senders: Vec<Sender<bool>>, handles: Vec<JoinHandle<()>>) -> Result<(), String> {
+    fn end_threads(
+        senders: Vec<Sender<(bool, usize)>>,
+        handles: Vec<JoinHandle<()>>,
+    ) -> Result<(), String> {
         for sender in senders {
-            sender.send(false).map_err(|e| e.to_string())?;
+            sender.send((false, 0)).map_err(|e| e.to_string())?;
         }
         for handle in handles {
             handle.join().expect("Child Thread Panicked");
@@ -175,20 +189,20 @@ mod render_backend {
 
     fn draw_loop(
         sender: Sender<bool>,
-        receiver: Receiver<bool>,
+        receiver: Receiver<(bool, usize)>,
         slice: &mut [u8],
-        data: Arc<Data>,
+        data: Arc<RwLock<Data>>,
         ind: usize,
         pitch: usize,
     ) {
-        let mut nframes = 0;
-        while let Ok(true) = receiver.recv() {
+        while let Ok((true, nframes)) = receiver.recv() {
             // Modify pixels
-            draw_func(slice, &data, nframes, ind, pitch);
+            {
+                let d = data.try_read().unwrap();
+                draw_func(slice, &d, nframes, ind, pitch);
+            }
             // Tell logic thread we're done
             sender.send(true).unwrap();
-            // Increase frame counter, now that a frame has been rendered
-            nframes += 1;
         }
     }
 
