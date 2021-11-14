@@ -1,11 +1,21 @@
 // All Used Windows
 pub use self::graphing_window::GraphingWindow;
-pub use self::safe_texture::SafeTexture;
+pub use self::safe_texture::{Message, SafeTexture};
 
 mod safe_texture {
     use sdl2::render::Texture;
     use std::ops::{Deref, DerefMut};
-    use std::sync::Mutex;
+    use std::sync::{Arc, Mutex};
+
+    pub enum Message {
+        Resize {
+            texture: Arc<SafeTexture>,
+            width: u32,
+            height: u32,
+        },
+        DoneRender,
+        Quit,
+    }
 
     #[repr(transparent)]
     pub struct SafeTexture(Mutex<Texture>);
@@ -123,35 +133,38 @@ mod basic_window {
         pub canvas: Canvas<Window>,
     }
     impl BasicWindow {
-        fn init(b: &BasicWindowBuilder) -> Result<BasicWindow, String> {
+        fn init(builder: &BasicWindowBuilder) -> Result<BasicWindow, String> {
             let mut window = {
-                let mut win = b.video_subsystem.window(b.title, b.width, b.height);
+                let mut win =
+                    builder
+                        .video_subsystem
+                        .window(builder.title, builder.width, builder.height);
                 win.position(
-                    BasicWindow::to_ll_windowpos(b.posx),
-                    BasicWindow::to_ll_windowpos(b.posy),
+                    BasicWindow::to_ll_windowpos(builder.posx),
+                    BasicWindow::to_ll_windowpos(builder.posy),
                 );
-                if b.resizable {
+                if builder.resizable {
                     win.resizable();
                 }
-                if b.hidden {
+                if builder.hidden {
                     win.hidden();
                 }
-                if b.borderless {
+                if builder.borderless {
                     win.borderless();
                 }
-                if b.fullscreen {
+                if builder.fullscreen {
                     win.fullscreen();
                 }
                 win.build().map_err(|e| e.to_string())?
             };
-            match (b.min_width, b.min_height) {
+            match (builder.min_width, builder.min_height) {
                 (Some(wid), Some(hei)) => window.set_minimum_size(wid, hei),
                 (None, Some(hei)) => window.set_minimum_size(0, hei),
                 (Some(wid), None) => window.set_minimum_size(wid, 0),
                 (None, None) => Ok(()),
             }
             .map_err(|e| e.to_string())?;
-            match (b.max_width, b.max_height) {
+            match (builder.max_width, builder.max_height) {
                 (Some(wid), Some(hei)) => window.set_maximum_size(wid, hei),
                 (None, Some(hei)) => window.set_maximum_size(0, hei),
                 (Some(wid), None) => window.set_maximum_size(wid, 0),
@@ -186,14 +199,14 @@ mod basic_window {
 
 mod graphing_window {
     use super::basic_window::{BasicWindow, BasicWindowBuilder};
-    use super::safe_texture::SafeTexture;
+    use super::safe_texture::{Message, SafeTexture};
     use sdl2::video::{Window, WindowPos};
     use std::sync::{mpsc, Arc};
 
     pub struct GraphingWindow {
         pub raw: BasicWindow,
         texture: Arc<SafeTexture>,
-        signaler: Option<mpsc::Sender<bool>>,
+        signaler: Option<mpsc::Sender<Message>>,
     }
 
     impl GraphingWindow {
@@ -234,7 +247,13 @@ mod graphing_window {
                 .set_size(size, size)
                 .map_err(|e| e.to_string())?;
 
-            self.send(false);
+            self.remake_textures()?;
+            let texture = self.texture.clone();
+            self.send(Message::Resize {
+                texture,
+                width: size,
+                height: size,
+            });
 
             Ok((size, size))
         }
@@ -263,21 +282,21 @@ mod graphing_window {
                 // Render things
                 self.raw.canvas.copy(&main_tex, None, None)?;
                 self.raw.present();
-                self.send(true);
+                self.send(Message::DoneRender);
                 return Ok(true);
             }
             Ok(false)
         }
-        pub fn get_textures(&mut self) -> (Arc<SafeTexture>, mpsc::Receiver<bool>) {
+        pub fn get_textures(&mut self) -> (Arc<SafeTexture>, mpsc::Receiver<Message>) {
             let (tx, rx) = mpsc::channel();
             self.signaler = Some(tx);
-            self.send(true);
+            self.send(Message::DoneRender);
             (self.texture.clone(), rx)
         }
         // This function doesn't really care if it succeeds or not,
         // since if it fails the thread will be remade in the proper state anyway
         #[allow(unused_must_use)]
-        pub fn send(&self, b: bool) {
+        pub fn send(&self, b: Message) {
             match self.signaler.as_ref() {
                 Some(sig) => sig.send(b),
                 None => panic!("Unreachable code in windows.rs get_textures()"),

@@ -2,9 +2,57 @@
 // Also parses text and makes equation logic
 pub use render_backend::main_loop;
 
+mod drawing {
+    pub type Data = (f64, f64, f64, f64);
+
+    pub fn get_draw_data(width: u32, _: u32) -> Data {
+        let center = width as f64 / 2.;
+        let speed = width as f64 / 500.;
+        let period = width as f64 / 10.;
+        let pi2 = std::f64::consts::PI * 2.;
+        (center, speed, period, pi2)
+    }
+
+    pub fn draw_pixel(
+        (center, speed, period, pi2): &Data,
+        nframes: usize,
+        pixel_x: u32,
+        pixel_y: u32,
+    ) -> (u8, u8, u8, u8) {
+        let xc = center - pixel_x as f64;
+        let yc = center - pixel_y as f64;
+        let r = {
+            let dist = (xc * xc + yc * yc).sqrt();
+            let rate = speed * 2.5 * nframes as f64;
+            let cos = (pi2 * (dist - rate) / period).cos();
+            255. * 0.5 * (1.0 + cos)
+        } as u8;
+        let g = {
+            let dist = (xc * xc + yc * yc).sqrt();
+            // let dist = xc * xc + yc * yc;
+            let rate = speed * -0.5 * nframes as f64;
+            let sin = (pi2 * (dist - rate) / period).sin();
+            150. * 0.5 * (1.0 + sin)
+        } as u8;
+        let b = {
+            let dist = (xc * xc + yc * yc).sqrt();
+            let rate = speed * nframes as f64;
+            let sin = (pi2 * (dist - rate) / period).sin();
+            200. * 0.5 * (1.0 + sin)
+        } as u8;
+
+        (r, g, b, 255)
+    }
+
+    pub fn modify_data((_, speed, ..): &mut Data) {
+        // There's nothing to modify yet
+        *speed += 0.1;
+    }
+}
+
 mod render_backend {
-    use super::drawing::{draw_pixel, get_draw_data, Data};
-    use crate::windows::SafeTexture;
+    use super::drawing::{draw_pixel, get_draw_data, modify_data, Data};
+    use crate::windows::{Message, SafeTexture};
     use std::alloc::{alloc, dealloc, Layout, LayoutError};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{
@@ -12,106 +60,101 @@ mod render_backend {
         Arc,
     };
     use std::thread::{spawn, JoinHandle};
+
     pub fn main_loop(
-        (texture_lock, sender): (Arc<SafeTexture>, Receiver<bool>),
+        (mut texture_lock, receiver): (Arc<SafeTexture>, Receiver<Message>),
         monitor: Arc<AtomicBool>,
-        width: u32,
-        height: u32,
+        mut width: u32,
+        mut height: u32,
     ) -> Result<(), String> {
         // Initialize all variables
         let cores = num_cpus::get() * 2;
-        let data = get_draw_data(width);
-        let (pixels, slices, splits) = init_pixels(width, height, cores)?;
-        let (handles, senders, receivers) =
-            init_threads(cores, splits, slices, data.clone(), width)?;
+        let mut draw_data = Arc::new(get_draw_data(width, height));
+        let (mut pixels, mut pixel_slices, mut splits) = init_pixels(width, height, cores)?;
+        let (mut handles, mut senders, mut receivers) =
+            start_threads(cores, splits, pixel_slices, draw_data.clone(), width)?;
         // Start main loop
         'main: while monitor.load(Ordering::Relaxed) {
             // Wait for the window to give up control on the textures
-            match sender.recv() {
-                Ok(true) => (),
-                Ok(false) => break 'main,
+            match receiver.recv() {
+                Ok(Message::DoneRender) => {
+                    // Grab the texture's lock again, and use them
+                    let mut texture = match texture_lock.lock() {
+                        Ok(t) => t,
+                        Err(_) => return Err("The main mutex was poisoned!".to_string()),
+                    };
+                    // Wait for threads to finish
+                    for receiver in &receivers {
+                        receiver.recv().unwrap();
+                    }
+                    // Copy buffer to the graphing texture
+                    let slice = pixels.as_slice();
+                    texture
+                        .update(None, slice, (width * 4) as usize)
+                        .map_err(|e| e.to_string())?;
+                    // Allow drawing logic to modify data
+                    let mut mut_data = unsafe { *Arc::as_ptr(&draw_data) };
+                    modify_data(&mut mut_data);
+                    // Restart rendering threads
+                    for sender in &senders {
+                        sender.send(true).unwrap();
+                    }
+                }
+                Ok(Message::Resize {
+                    texture,
+                    width: wid,
+                    height: hei,
+                }) => {
+                    texture_lock = texture;
+                    width = wid;
+                    height = hei;
+                    end_threads(senders, handles)?;
+                    draw_data = Arc::new(get_draw_data(width, height));
+                    let temp = init_pixels(width, height, cores)?;
+                    pixels = temp.0;
+                    pixel_slices = temp.1;
+                    splits = temp.2;
+                    let temp =
+                        start_threads(cores, splits, pixel_slices, draw_data.clone(), width)?;
+                    handles = temp.0;
+                    senders = temp.1;
+                    receivers = temp.2;
+                }
+                Ok(Message::Quit) => {
+                    break 'main;
+                }
                 Err(_) => {
                     return Err(
                         "Something happened with the transmitter in main window!".to_string()
                     )
                 }
             };
-            {
-                // Grab the texture's lock again, and use them
-                let mut texture = match texture_lock.lock() {
-                    Ok(t) => t,
-                    Err(_) => return Err("The main mutex was poisoned!".to_string()),
-                };
-                // Wait for threads to finish
-                for receiver in &receivers {
-                    receiver.recv().unwrap();
-                }
-                // Copy buffer to the graphing texture
-                let slice = pixels.as_slice();
-                texture
-                    .update(None, slice, (width * 4) as usize)
-                    .map_err(|e| e.to_string())?;
-                // Restart rendering threads
-                for sender in &senders {
-                    sender.send(true).unwrap();
-                }
-            }
-            // Once we finished using the textures, presumably
-            // the main thread will update the screen and send us a message
         }
         // We are stopping, so all sub threads need to stop too
-        for sender in senders {
-            sender.send(false).unwrap();
-        }
-        for handle in handles {
-            handle.join().expect("Child Thread Panicked");
-        }
-        Ok(())
+        end_threads(senders, handles)
     }
 
-    fn init_pixels(
-        width: u32,
-        height: u32,
+    fn start_threads(
         cores: usize,
-    ) -> Result<(Pixels, Vec<Option<&'static mut [u8]>>, Vec<usize>), String> {
-        let mut pixels = Pixels::new((width * height * 4) as usize).map_err(|e| e.to_string())?;
-        let splits = {
-            let dist = ((width * height) as usize / cores) * 4;
-            let mut vec = Vec::with_capacity(cores as usize);
-            for i in 0..cores {
-                vec.push(i * dist);
-            }
-            vec
-        };
-        let slices = match unsafe { pixels.split_at_mut_unsafe(&splits[1..]) } {
-            Some(s) => s,
-            None => return Err("Failed to make pixel slices".to_string()),
-        };
-        Ok((pixels, slices, splits))
-    }
-
-    fn init_threads(
-        cores: usize,
-        splits: Vec<usize>,
-        mut slices: Vec<Option<&'static mut [u8]>>,
-        data: Data,
+        mut splits: Vec<usize>,
+        mut pixel_slices: Vec<&'static mut [u8]>,
+        data: Arc<Data>,
         width: u32,
     ) -> Result<(Vec<JoinHandle<()>>, Vec<Sender<bool>>, Vec<Receiver<bool>>), String> {
         let mut handles = Vec::with_capacity(cores);
         let mut receivers = Vec::with_capacity(cores);
         let mut senders = Vec::with_capacity(cores);
-        for i in 0..cores {
-            let slice = match slices[i].take() {
-                Some(t) => t,
-                None => return Err("Unreachable".to_string()),
-            };
-            let ind = splits[i];
+        for _i in 0..cores {
+            let slice = pixel_slices.pop().unwrap();
+            let thread_data = data.clone();
+            let ind = splits.pop().unwrap();
+            // let ind = splits[_i]; // Cool bug
             let pitch = width as usize * 4;
             let (ttx, rx) = channel();
             let (tx, trx) = channel();
             tx.send(true).unwrap();
             let handle = spawn(move || {
-                draw_loop(ttx, trx, slice, &data, ind, pitch);
+                draw_loop(ttx, trx, slice, thread_data, ind, pitch);
             });
             receivers.push(rx);
             senders.push(tx);
@@ -120,18 +163,31 @@ mod render_backend {
         Ok((handles, senders, receivers))
     }
 
+    fn end_threads(senders: Vec<Sender<bool>>, handles: Vec<JoinHandle<()>>) -> Result<(), String> {
+        for sender in senders {
+            sender.send(false).map_err(|e| e.to_string())?;
+        }
+        for handle in handles {
+            handle.join().expect("Child Thread Panicked");
+        }
+        Ok(())
+    }
+
     fn draw_loop(
         sender: Sender<bool>,
         receiver: Receiver<bool>,
         slice: &mut [u8],
-        data: &Data,
+        data: Arc<Data>,
         ind: usize,
         pitch: usize,
     ) {
         let mut nframes = 0;
         while let Ok(true) = receiver.recv() {
-            draw_func(slice, data, nframes, ind, pitch);
+            // Modify pixels
+            draw_func(slice, &data, nframes, ind, pitch);
+            // Tell logic thread we're done
             sender.send(true).unwrap();
+            // Increase frame counter, now that a frame has been rendered
             nframes += 1;
         }
     }
@@ -151,6 +207,28 @@ mod render_backend {
             slice[i * 4 + 3] = a;
         }
     }
+
+    fn init_pixels(
+        width: u32,
+        height: u32,
+        cores: usize,
+    ) -> Result<(Pixels, Vec<&'static mut [u8]>, Vec<usize>), String> {
+        let mut pixels = Pixels::new((width * height * 4) as usize).map_err(|e| e.to_string())?;
+        let splits = {
+            let dist = ((width * height) as usize / cores) * 4;
+            let mut vec = Vec::with_capacity(cores as usize);
+            for i in 0..cores {
+                vec.push(i * dist);
+            }
+            vec
+        };
+        let slices = match unsafe { pixels.split_at_mut_unsafe(&splits[1..]) } {
+            Some(s) => s,
+            None => return Err("Failed to make pixel slices".to_string()),
+        };
+        Ok((pixels, slices, splits))
+    }
+
     pub struct Pixels {
         ptr: *mut u8,
         len: usize,
@@ -242,7 +320,7 @@ mod render_backend {
         pub unsafe fn split_at_mut_unsafe<'a>(
             &mut self,
             splits: &[usize],
-        ) -> Option<Vec<Option<&'a mut [u8]>>> {
+        ) -> Option<Vec<&'a mut [u8]>> {
             let mut pointers = Vec::with_capacity(splits.len());
             let mut start = 0;
             for &split in splits {
@@ -254,7 +332,7 @@ mod render_backend {
                     let len = split - start;
                     std::slice::from_raw_parts_mut(addr, len)
                 };
-                pointers.push(Some(pointer));
+                pointers.push(pointer);
                 start = split;
             }
             if start < self.len {
@@ -263,7 +341,7 @@ mod render_backend {
                     let len = self.len - start;
                     std::slice::from_raw_parts_mut(addr, len)
                 };
-                pointers.push(Some(pointer));
+                pointers.push(pointer);
             }
             Some(pointers)
         }
@@ -271,6 +349,7 @@ mod render_backend {
             self.len
         }
     }
+
     impl Drop for Pixels {
         fn drop(&mut self) {
             unsafe {
@@ -280,48 +359,5 @@ mod render_backend {
                 )
             };
         }
-    }
-}
-
-mod drawing {
-    pub type Data = (f64, f64, f64, f64);
-
-    pub fn get_draw_data(width: u32) -> Data {
-        let center = width as f64 / 2.;
-        let speed = width as f64 / 500.;
-        let period = width as f64 / 10.;
-        let pi2 = std::f64::consts::PI * 2.;
-        (center, speed, period, pi2)
-    }
-
-    pub fn draw_pixel(
-        (center, speed, period, pi2): &Data,
-        nframes: usize,
-        pixel_x: u32,
-        pixel_y: u32,
-    ) -> (u8, u8, u8, u8) {
-        let xc = center - pixel_x as f64;
-        let yc = center - pixel_y as f64;
-        let r = {
-            let dist = (xc * xc + yc * yc).sqrt();
-            let rate = speed * 2.5 * nframes as f64;
-            let cos = (pi2 * (dist - rate) / period).cos();
-            255. * 0.5 * (1.0 + cos)
-        } as u8;
-        let g = {
-            let dist = (xc * xc + yc * yc).sqrt();
-            // let dist = xc * xc + yc * yc;
-            let rate = speed * -0.5 * nframes as f64;
-            let cos = (pi2 * (dist - rate) / period).sin();
-            150. * 0.5 * (1.0 + cos)
-        } as u8;
-        let b = {
-            let dist = (xc * xc + yc * yc).sqrt();
-            let rate = speed * nframes as f64;
-            let sin = (pi2 * (dist - rate) / period).sin();
-            200. * 0.5 * (1.0 + sin)
-        } as u8;
-
-        (r, g, b, 255)
     }
 }

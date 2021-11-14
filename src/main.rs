@@ -11,6 +11,7 @@ use std::sync::Arc;
 use std::thread;
 use std::time::Instant;
 use windows::GraphingWindow;
+use windows::Message;
 
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
@@ -52,7 +53,7 @@ pub fn main() -> Result<(), String> {
     'running: loop {
         // Check on thread status, and respond accordingly
         match control.upgrade() {
-            // Thread is alive
+            // Logic thread is alive
             Some(_) => {
                 // See if there are any frames to grab
                 // If so, copy and present it
@@ -63,19 +64,19 @@ pub fn main() -> Result<(), String> {
                     println!("Framerate: {}", fr);
                 }
             }
-            // Thread is dead
+            // Logic thread is dead
             None => {
-                println!("Main thread died");
-                // Get result from thread
+                println!("Logic thread died");
+                // Get result from thread and
+                // process the result
                 main_thread
                     .take()
-                    .expect("Main thread isn't there")
+                    .expect("Logic thread isn't there")
                     .join()
                     .expect("Logic thread panicked")?;
                 // Remake it
                 monitor = Arc::new(AtomicBool::new(true));
                 control = Arc::downgrade(&monitor);
-                main_window.remake_textures()?;
                 let main_data = main_window.get_textures();
                 main_thread = Some(thread::spawn(move || {
                     logic::main_loop(main_data, monitor, width, height)
@@ -93,10 +94,10 @@ pub fn main() -> Result<(), String> {
                     keycode: Some(Keycode::Escape),
                     ..
                 } => {
-                    main_window.send(false);
+                    main_window.send(Message::Quit);
                     main_thread
                         .take()
-                        .expect("Main thread isn't there")
+                        .expect("Logic thread isn't there")
                         .join()
                         .expect("Logic thread panicked")?;
                     break 'running;
