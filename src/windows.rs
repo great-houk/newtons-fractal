@@ -1,6 +1,6 @@
 // All Used Windows
 pub use self::graphing_window::GraphingWindow;
-pub use self::safe_texture::{Message, SafeTexture};
+pub use self::safe_texture::{Message, SafeTexture, ThreadMessage};
 
 mod safe_texture {
     use sdl2::render::Texture;
@@ -15,6 +15,10 @@ mod safe_texture {
         },
         DoneRender,
         Quit,
+    }
+
+    pub enum ThreadMessage {
+        RenderReady,
     }
 
     #[repr(transparent)]
@@ -199,14 +203,15 @@ mod basic_window {
 
 mod graphing_window {
     use super::basic_window::{BasicWindow, BasicWindowBuilder};
-    use super::safe_texture::{Message, SafeTexture};
+    use super::safe_texture::{Message, SafeTexture, ThreadMessage};
     use sdl2::video::{Window, WindowPos};
-    use std::sync::{mpsc, Arc};
+    use std::sync::{mpsc, mpsc::TryRecvError, Arc};
 
     pub struct GraphingWindow {
         pub raw: BasicWindow,
         texture: Arc<SafeTexture>,
-        signaler: Option<mpsc::Sender<Message>>,
+        sender: Option<mpsc::Sender<Message>>,
+        receiver: Option<mpsc::Receiver<ThreadMessage>>,
     }
 
     impl GraphingWindow {
@@ -236,7 +241,8 @@ mod graphing_window {
             Ok(GraphingWindow {
                 raw: window,
                 texture,
-                signaler: None,
+                sender: None,
+                receiver: None,
             })
         }
 
@@ -278,29 +284,46 @@ mod graphing_window {
             self.raw.window_mut()
         }
         pub fn present(&mut self) -> Result<bool, String> {
-            if let Ok(main_tex) = self.texture.try_lock() {
+            if let Ok(ThreadMessage::RenderReady) = self.recv() {
                 // Render things
-                self.raw.canvas.copy(&main_tex, None, None)?;
-                self.raw.present();
+                {
+                    let main_tex = self.texture.lock().map_err(|e| e.to_string())?;
+                    self.raw.canvas.copy(&main_tex, None, None)?;
+                    self.raw.present();
+                }
                 self.send(Message::DoneRender);
                 return Ok(true);
             }
             Ok(false)
         }
-        pub fn get_textures(&mut self) -> (Arc<SafeTexture>, mpsc::Receiver<Message>) {
-            let (tx, rx) = mpsc::channel();
-            self.signaler = Some(tx);
+        pub fn get_textures(
+            &mut self,
+        ) -> (
+            Arc<SafeTexture>,
+            mpsc::Sender<ThreadMessage>,
+            mpsc::Receiver<Message>,
+        ) {
+            let (ttx, rx) = mpsc::channel();
+            let (tx, trx) = mpsc::channel();
+            self.sender = Some(tx);
+            self.receiver = Some(rx);
             self.send(Message::DoneRender);
-            (self.texture.clone(), rx)
+            (self.texture.clone(), ttx, trx)
         }
         // This function doesn't really care if it succeeds or not,
         // since if it fails the thread will be remade in the proper state anyway
         #[allow(unused_must_use)]
         pub fn send(&self, b: Message) {
-            match self.signaler.as_ref() {
+            match self.sender.as_ref() {
                 Some(sig) => sig.send(b),
                 None => panic!("Unreachable code in windows.rs get_textures()"),
             };
+        }
+        pub fn recv(&self) -> Result<ThreadMessage, TryRecvError> {
+            match self.receiver.as_ref() {
+                Some(receiver) => receiver.try_recv(),
+                None => panic!("Unreachable code in windows.rs get_textures()"),
+            }
         }
     }
 }

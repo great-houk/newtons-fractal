@@ -15,8 +15,8 @@ use windows::Message;
 
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
 
     // Call Main Window Init and Open Function from windows.rs
     let mut main_window = GraphingWindow::init(
@@ -26,7 +26,8 @@ pub fn main() -> Result<(), String> {
         500,
         WindowPos::Centered,
         WindowPos::Centered,
-    )?;
+    )
+    .unwrap();
     let main_data = main_window.get_textures();
 
     // Call Settings Window Init from windows.rs
@@ -38,7 +39,7 @@ pub fn main() -> Result<(), String> {
     let mut control = Arc::downgrade(&monitor);
 
     // Make a new thread to handle the drawing logic in logic.rs
-    let (mut width, mut height) = main_window.raw.canvas.output_size()?;
+    let (mut width, mut height) = main_window.raw.canvas.output_size().unwrap();
     let mut main_thread = Some(thread::spawn(move || {
         logic::main_loop(main_data, monitor, width, height)
     }));
@@ -48,7 +49,7 @@ pub fn main() -> Result<(), String> {
 
     // Start the event loop and pass the events to the proper threads,
     // As well as wait for any draw requests from the drawing thread
-    let mut event_pump = sdl_context.event_pump()?;
+    let mut event_pump = sdl_context.event_pump().unwrap();
     let mut now = Instant::now();
     'running: loop {
         // Check on thread status, and respond accordingly
@@ -57,7 +58,7 @@ pub fn main() -> Result<(), String> {
             Some(_) => {
                 // See if there are any frames to grab
                 // If so, copy and present it
-                if main_window.present()? {
+                if main_window.present().unwrap() {
                     let time_elapsed = Instant::elapsed(&now).as_micros();
                     now = Instant::now();
                     let fr = 1_000_000 / time_elapsed;
@@ -73,7 +74,8 @@ pub fn main() -> Result<(), String> {
                     .take()
                     .expect("Logic thread isn't there")
                     .join()
-                    .expect("Logic thread panicked")?;
+                    .expect("Logic thread panicked")
+                    .unwrap();
                 // Remake it
                 monitor = Arc::new(AtomicBool::new(true));
                 control = Arc::downgrade(&monitor);
@@ -99,7 +101,8 @@ pub fn main() -> Result<(), String> {
                         .take()
                         .expect("Logic thread isn't there")
                         .join()
-                        .expect("Logic thread panicked")?;
+                        .expect("Logic thread panicked")
+                        .unwrap();
                     break 'running;
                 }
                 // If a window resizes, then we need to tell it
@@ -109,7 +112,7 @@ pub fn main() -> Result<(), String> {
                     ..
                 } => {
                     if id == main_window.window().id() {
-                        let (w, h) = main_window.resized(wid as u32, hei as u32)?;
+                        let (w, h) = main_window.resized(wid as u32, hei as u32).unwrap();
                         width = w;
                         height = h;
                     } else {

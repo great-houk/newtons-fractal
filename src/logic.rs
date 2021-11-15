@@ -52,7 +52,8 @@ mod drawing {
 
 mod render_backend {
     use super::drawing::{draw_pixel, get_draw_data, modify_data, Data};
-    use crate::windows::{Message, SafeTexture};
+    use crate::windows::{Message, SafeTexture, ThreadMessage};
+    use sdl2::rect::Rect;
     use std::alloc::{alloc, dealloc, Layout, LayoutError};
     use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::{
@@ -62,14 +63,18 @@ mod render_backend {
     use std::thread::{spawn, JoinHandle};
 
     pub fn main_loop(
-        (mut texture_lock, receiver): (Arc<SafeTexture>, Receiver<Message>),
+        (mut texture_lock, sender, receiver): (
+            Arc<SafeTexture>,
+            Sender<ThreadMessage>,
+            Receiver<Message>,
+        ),
         monitor: Arc<AtomicBool>,
         mut width: u32,
         mut height: u32,
     ) -> Result<(), String> {
         // Initialize all variables
         let mut nframes = 0;
-        let cores = num_cpus::get() * 2;
+        let cores = num_cpus::get();
         let mut draw_data = Arc::new(RwLock::new(get_draw_data(width, height)));
         let (mut pixels, mut pixel_slices, mut splits) = init_pixels(width, height, cores)?;
         let (mut handles, mut senders, mut receivers) =
@@ -79,20 +84,26 @@ mod render_backend {
             // Wait for the window to give up control on the textures
             match receiver.recv() {
                 Ok(Message::DoneRender) => {
-                    // Grab the texture's lock again, and use them
-                    let mut texture = match texture_lock.lock() {
-                        Ok(t) => t,
-                        Err(_) => return Err("The main mutex was poisoned!".to_string()),
-                    };
                     // Wait for threads to finish
                     for receiver in &receivers {
                         receiver.recv().unwrap();
                     }
-                    // Copy buffer to the graphing texture
-                    let slice = pixels.as_slice();
-                    texture
-                        .update(None, slice, (width * 4) as usize)
-                        .map_err(|e| e.to_string())?;
+                    // Grab the texture's lock again, and use them
+                    {
+                        let mut texture = match texture_lock.lock() {
+                            Ok(t) => t,
+                            Err(_) => return Err("The main mutex was poisoned!".to_string()),
+                        };
+                        // Copy buffer to the graphing texture
+                        let slice = pixels.as_slice();
+                        texture
+                            .update(Rect::new(0, 0, width, height), slice, (width * 4) as usize)
+                            .map_err(|e| e.to_string())?;
+                    }
+                    // Let main thread know we're done
+                    sender
+                        .send(ThreadMessage::RenderReady)
+                        .expect("The Main Thread's Receiver is Dead!");
                     // Allow drawing logic to modify data
                     {
                         let mut mut_data = draw_data.try_write().unwrap();
