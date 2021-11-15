@@ -2,57 +2,68 @@
 pub use render_backend::main_loop;
 
 mod drawing {
-    pub type Data = (f64, f64, f64, f64, f64, String);
+    use crate::numbers::imaginary::pow;
+
+    pub struct Data {
+        center_x: f64,
+        center_y: f64,
+        scale: f64,
+    }
 
     /// Initializes the Data type
-    pub fn get_draw_data(width: u32, _: u32) -> Data {
-        let center = width as f64 / 2.;
-        let speed = width as f64 / 800.;
-        let period = width as f64 / 10.;
-        let pi2 = std::f64::consts::PI * 2.;
-        (center, speed, period, pi2, center, String::default())
+    pub fn get_draw_data(width: u32, height: u32) -> Data {
+        let center_x = width as f64 / 2.;
+        let center_y = height as f64 / 2.;
+        Data {
+            center_x,
+            center_y,
+            scale: 1.0,
+        }
     }
 
     /// Draws a single pixel, given an x in pixels, y in pixels, frame count, and Data
     pub fn draw_pixel(
-        (center, speed, period, pi2, _, _): &Data,
+        Data {
+            center_x,
+            center_y,
+            scale,
+        }: &Data,
         nframes: usize,
         pixel_x: u32,
         pixel_y: u32,
     ) -> (u8, u8, u8, u8) {
-        let xc = center - pixel_x as f64;
-        let yc = center - pixel_y as f64;
-        let r = {
-            let dist = (xc * xc + yc * yc).sqrt();
-            let rate = speed * 1.5 * nframes as f64;
-            let per = period * 5.4;
-            let cos = (pi2 * (dist - rate) / per).cos();
-            255. * 0.5 * (1.0 + cos)
-        } as u8;
-        let g = {
-            let dist = (xc * xc + yc * yc).sqrt();
-            // let dist = xc * xc + yc * yc;
-            let rate = speed * -0.5 * nframes as f64;
-            let per = period * 0.8;
-            let sin = (pi2 * (dist - rate) / per).sin();
-            150. * 0.5 * (1.0 + sin)
-        } as u8;
-        let b = {
-            let dist = (xc * xc + yc * yc).sqrt();
-            let rate = speed * 0.8 * nframes as f64;
-            let per = period * 1.2;
-            let sin = (pi2 * (dist - rate) / per).sin();
-            200. * 0.5 * (1.0 + sin)
-        } as u8;
+        let xc = (center_x - pixel_x as f64) / (scale * 50.);
+        let yc = (center_y - pixel_y as f64) / (scale * 50.);
+
+        let (fx, fy) = pow((xc, yc), 2.);
+        let (vx, vy) = (scale * 100. * (fx - xc), scale * 100. * (fy - yc));
+        let (r, g, b);
+        let mut overflow = 0.;
+        if vx > 255. {
+            r = 255;
+            overflow += vx - 255.;
+        } else {
+            r = vx as u8;
+        }
+        if vy > 255. {
+            g = 255;
+            overflow += vy - 255.;
+        } else {
+            g = vy as u8;
+        }
+        if overflow > 255. {
+            b = 255;
+        } else {
+            b = overflow as u8;
+        }
 
         (r, g, b, 255)
     }
 
     /// Modifies the Data which is given to every pixel every frame.
     /// Only is called once per frame, after everything has been rendered
-    pub fn modify_data((center, .., c, _): &mut Data, nframes: usize) {
+    pub fn modify_data(data: &mut Data, nframes: usize) {
         // There's nothing to modify yet
-        *center = *c + (nframes as f64 / 100.).cos() * 100.;
     }
 }
 
