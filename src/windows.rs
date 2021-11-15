@@ -209,6 +209,11 @@ mod graphing_window {
 
     pub struct GraphingWindow {
         pub raw: BasicWindow,
+        width: u32,
+        height: u32,
+        x_offset: u32,
+        y_offset: u32,
+        ratio: f64,
         texture: Arc<SafeTexture>,
         sender: Option<mpsc::Sender<Message>>,
         receiver: Option<mpsc::Receiver<ThreadMessage>>,
@@ -220,12 +225,14 @@ mod graphing_window {
             title: &'static str,
             width: u32,
             height: u32,
+            x_offset: u32,
+            y_offset: u32,
             posx: WindowPos,
             posy: WindowPos,
             // iconPath: Option<>
         ) -> Result<GraphingWindow, String> {
             let window = BasicWindowBuilder::new(video_subsystem, title, width, height)
-                .set_min_size(Some(500), Some(500))
+                .set_min_size(Some(width), Some(height))
                 .set_position(posx, posy)
                 .set_resizable(true)
                 .build()?;
@@ -238,36 +245,55 @@ mod graphing_window {
                 Arc::new(SafeTexture::new(m))
             };
 
+            let ratio = width as f64 / height as f64;
+
             Ok(GraphingWindow {
                 raw: window,
+                width,
+                height,
+                x_offset,
+                y_offset,
+                ratio,
                 texture,
                 sender: None,
                 receiver: None,
             })
         }
 
+        pub fn graph_size(&self) -> (u32, u32) {
+            (self.width - self.x_offset, self.height - self.y_offset)
+        }
+        pub fn size(&self) -> (u32, u32) {
+            (self.width, self.height)
+        }
+
         pub fn resized(&mut self, width: u32, height: u32) -> Result<(u32, u32), String> {
-            let size = (width as f32 * height as f32).sqrt() as u32;
-
+            let height = (width as f64 * height as f64 / self.ratio).sqrt() as u32;
+            let width = (height as f64 * self.ratio) as u32;
+            self.width = width;
+            self.height = height;
+            // Set window size
             self.window_mut()
-                .set_size(size, size)
+                .set_size(width, height)
                 .map_err(|e| e.to_string())?;
-
+            // Remake textures to fit
             self.remake_textures()?;
+            // Let the threads know
             let texture = self.texture.clone();
+            let (x, y) = self.graph_size();
             self.send(Message::Resize {
                 texture,
-                width: size,
-                height: size,
+                width: x,
+                height: y,
             });
 
-            Ok((size, size))
+            Ok((width, height))
         }
 
         pub fn remake_textures(&mut self) -> Result<(), String> {
             let texture = {
                 let canv = &self.raw.canvas;
-                let (width, height) = self.raw.canvas.output_size()?;
+                let (width, height) = self.size();
                 let m = canv
                     .create_texture_target(None, width, height)
                     .map_err(|e| e.to_string())?;

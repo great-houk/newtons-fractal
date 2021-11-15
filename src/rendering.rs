@@ -1,10 +1,10 @@
 // Holds all the drawing logic, like the graph rendering and the settings display
-// Also parses text and makes equation logic
 pub use render_backend::main_loop;
 
 mod drawing {
     pub type Data = (f64, f64, f64, f64, f64, String);
 
+    /// Initializes the Data type
     pub fn get_draw_data(width: u32, _: u32) -> Data {
         let center = width as f64 / 2.;
         let speed = width as f64 / 500.;
@@ -13,6 +13,7 @@ mod drawing {
         (center, speed, period, pi2, center, String::default())
     }
 
+    /// Draws a single pixel, given an x in pixels, y in pixels, frame count, and Data
     pub fn draw_pixel(
         (center, speed, period, pi2, _, _): &Data,
         nframes: usize,
@@ -44,9 +45,11 @@ mod drawing {
         (r, g, b, 255)
     }
 
+    /// Modifies the Data which is given to every pixel every frame.
+    /// Only is called once per frame, after everything has been rendered
     pub fn modify_data((center, .., c, _): &mut Data, nframes: usize) {
         // There's nothing to modify yet
-        *center = *c + (nframes as f64 / 100.).sin() * 100.;
+        *center = *c + (nframes as f64 / 100.).tan() * 100.;
     }
 }
 
@@ -149,28 +152,26 @@ mod render_backend {
         end_threads(senders, handles)
     }
 
+    type Thread = (
+        Vec<JoinHandle<()>>,
+        Vec<Sender<(bool, usize)>>,
+        Vec<Receiver<bool>>,
+    );
     fn start_threads(
         cores: usize,
         mut splits: Vec<usize>,
         mut pixel_slices: Vec<&'static mut [u8]>,
         data: Arc<RwLock<Data>>,
         width: u32,
-    ) -> Result<
-        (
-            Vec<JoinHandle<()>>,
-            Vec<Sender<(bool, usize)>>,
-            Vec<Receiver<bool>>,
-        ),
-        String,
-    > {
+    ) -> Result<Thread, String> {
         let mut handles = Vec::with_capacity(cores);
         let mut receivers = Vec::with_capacity(cores);
         let mut senders = Vec::with_capacity(cores);
         for _i in 0..cores {
             let slice = pixel_slices.pop().unwrap();
             let ind = splits.pop().unwrap();
-            let thread_data = data.clone();
             // let ind = splits[_i]; // Cool bug
+            let thread_data = data.clone();
             let pitch = width as usize * 4;
             let (ttx, rx) = channel();
             let (tx, trx) = channel();
@@ -233,11 +234,8 @@ mod render_backend {
         }
     }
 
-    fn init_pixels(
-        width: u32,
-        height: u32,
-        cores: usize,
-    ) -> Result<(Pixels, Vec<&'static mut [u8]>, Vec<usize>), String> {
+    type PixelSplits = (Pixels, Vec<&'static mut [u8]>, Vec<usize>);
+    fn init_pixels(width: u32, height: u32, cores: usize) -> Result<PixelSplits, String> {
         let mut pixels = Pixels::new((width * height * 4) as usize).map_err(|e| e.to_string())?;
         let splits = {
             let dist = ((width * height) as usize / cores) * 4;

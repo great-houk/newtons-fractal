@@ -1,6 +1,6 @@
 extern crate sdl2;
 mod events;
-mod logic;
+mod rendering;
 mod windows;
 
 use sdl2::event::{Event, WindowEvent};
@@ -21,9 +21,11 @@ pub fn main() -> Result<(), String> {
     // Call Main Window Init and Open Function from windows.rs
     let mut main_window = GraphingWindow::init(
         &video_subsystem,
-        "Main Window",
-        500,
-        500,
+        "➕Newton's Fractal➕",
+        800,
+        600,
+        200,
+        0,
         WindowPos::Centered,
         WindowPos::Centered,
     )
@@ -38,10 +40,10 @@ pub fn main() -> Result<(), String> {
     let mut monitor = Arc::new(AtomicBool::new(true));
     let mut control = Arc::downgrade(&monitor);
 
-    // Make a new thread to handle the drawing logic in logic.rs
-    let (mut width, mut height) = main_window.raw.canvas.output_size().unwrap();
+    // Make a new thread to handle the drawing rendering in rendering.rs
+    let (mut width, mut height) = main_window.graph_size();
     let mut main_thread = Some(thread::spawn(move || {
-        logic::main_loop(main_data, monitor, width, height)
+        rendering::main_loop(main_data, monitor, width, height)
     }));
 
     // Make a new thread to handle and process all events,
@@ -54,7 +56,7 @@ pub fn main() -> Result<(), String> {
     'running: loop {
         // Check on thread status, and respond accordingly
         match control.upgrade() {
-            // Logic thread is alive
+            // rendering thread is alive
             Some(_) => {
                 // See if there are any frames to grab
                 // If so, copy and present it
@@ -65,23 +67,23 @@ pub fn main() -> Result<(), String> {
                     println!("Framerate: {}", fr);
                 }
             }
-            // Logic thread is dead
+            // rendering thread is dead
             None => {
-                println!("Logic thread died");
+                println!("rendering thread died");
                 // Get result from thread and
                 // process the result
                 main_thread
                     .take()
-                    .expect("Logic thread isn't there")
+                    .expect("rendering thread isn't there")
                     .join()
-                    .expect("Logic thread panicked")
+                    .expect("rendering thread panicked")
                     .unwrap();
                 // Remake it
                 monitor = Arc::new(AtomicBool::new(true));
                 control = Arc::downgrade(&monitor);
                 let main_data = main_window.get_textures();
                 main_thread = Some(thread::spawn(move || {
-                    logic::main_loop(main_data, monitor, width, height)
+                    rendering::main_loop(main_data, monitor, width, height)
                 }));
             }
         }
@@ -99,9 +101,9 @@ pub fn main() -> Result<(), String> {
                     main_window.send(Message::Quit);
                     main_thread
                         .take()
-                        .expect("Logic thread isn't there")
+                        .expect("rendering thread isn't there")
                         .join()
-                        .expect("Logic thread panicked")
+                        .expect("rendering thread panicked")
                         .unwrap();
                     break 'running;
                 }
@@ -129,7 +131,7 @@ pub fn main() -> Result<(), String> {
     /*
                    Events with
                    Drawing Impacts
-         logic.rs <------- events.rs
+         rendering.rs <------- events.rs
             \                  >
              \               /
     Updated   \            /   All Events I want to handle
