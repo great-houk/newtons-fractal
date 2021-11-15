@@ -204,6 +204,7 @@ mod basic_window {
 mod graphing_window {
     use super::basic_window::{BasicWindow, BasicWindowBuilder};
     use super::safe_texture::{Message, SafeTexture, ThreadMessage};
+    use sdl2::pixels::PixelFormatEnum;
     use sdl2::video::{Window, WindowPos};
     use std::sync::{mpsc, mpsc::TryRecvError, Arc};
 
@@ -240,7 +241,7 @@ mod graphing_window {
             let texture = {
                 let canv = &window.canvas;
                 let m = canv
-                    .create_texture_target(None, width, height)
+                    .create_texture_target(PixelFormatEnum::ABGR8888, width, height)
                     .map_err(|e| e.to_string())?;
                 Arc::new(SafeTexture::new(m))
             };
@@ -295,7 +296,7 @@ mod graphing_window {
                 let canv = &self.raw.canvas;
                 let (width, height) = self.size();
                 let m = canv
-                    .create_texture_target(None, width, height)
+                    .create_texture_target(PixelFormatEnum::ABGR8888, width, height)
                     .map_err(|e| e.to_string())?;
                 Arc::new(SafeTexture::new(m))
             };

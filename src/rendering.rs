@@ -7,7 +7,7 @@ mod drawing {
     /// Initializes the Data type
     pub fn get_draw_data(width: u32, _: u32) -> Data {
         let center = width as f64 / 2.;
-        let speed = width as f64 / 500.;
+        let speed = width as f64 / 800.;
         let period = width as f64 / 10.;
         let pi2 = std::f64::consts::PI * 2.;
         (center, speed, period, pi2, center, String::default())
@@ -24,21 +24,24 @@ mod drawing {
         let yc = center - pixel_y as f64;
         let r = {
             let dist = (xc * xc + yc * yc).sqrt();
-            let rate = speed * 2.5 * nframes as f64;
-            let cos = (pi2 * (dist - rate) / period).cos();
+            let rate = speed * 1.5 * nframes as f64;
+            let per = period * 5.4;
+            let cos = (pi2 * (dist - rate) / per).cos();
             255. * 0.5 * (1.0 + cos)
         } as u8;
         let g = {
             let dist = (xc * xc + yc * yc).sqrt();
             // let dist = xc * xc + yc * yc;
             let rate = speed * -0.5 * nframes as f64;
-            let sin = (pi2 * (dist - rate) / period).sin();
+            let per = period * 0.8;
+            let sin = (pi2 * (dist - rate) / per).sin();
             150. * 0.5 * (1.0 + sin)
         } as u8;
         let b = {
             let dist = (xc * xc + yc * yc).sqrt();
-            let rate = speed * nframes as f64;
-            let sin = (pi2 * (dist - rate) / period).sin();
+            let rate = speed * 0.8 * nframes as f64;
+            let per = period * 1.2;
+            let sin = (pi2 * (dist - rate) / per).sin();
             200. * 0.5 * (1.0 + sin)
         } as u8;
 
@@ -49,7 +52,7 @@ mod drawing {
     /// Only is called once per frame, after everything has been rendered
     pub fn modify_data((center, .., c, _): &mut Data, nframes: usize) {
         // There's nothing to modify yet
-        *center = *c + (nframes as f64 / 100.).tan() * 100.;
+        *center = *c + (nframes as f64 / 100.).cos() * 100.;
     }
 }
 
@@ -77,7 +80,7 @@ mod render_backend {
     ) -> Result<(), String> {
         // Initialize all variables
         let mut nframes = 0;
-        let cores = num_cpus::get();
+        let cores = num_cpus::get() * 2;
         let mut draw_data = Arc::new(RwLock::new(get_draw_data(width, height)));
         let (mut pixels, mut pixel_slices, mut splits) = init_pixels(width, height, cores)?;
         let (mut handles, mut senders, mut receivers) =
