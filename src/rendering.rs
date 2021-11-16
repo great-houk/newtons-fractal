@@ -2,7 +2,7 @@
 pub use render_backend::main_loop;
 
 mod drawing {
-    use crate::numbers::imaginary::pow;
+    use crate::numbers::imaginary::square;
 
     pub struct Data {
         center_x: f64,
@@ -35,8 +35,8 @@ mod drawing {
         let xc = (center_x - pixel_x as f64) / (scale * 50.);
         let yc = (center_y - pixel_y as f64) / (scale * 50.);
 
-        let (fx, fy) = pow((xc, yc), 2.);
-        let (vx, vy) = (scale * 100. * (fx - xc), scale * 100. * (fy - yc));
+        let (fx, fy) = square((xc, yc));
+        let (vx, vy) = (scale * 10. * (fx - xc).abs(), scale * 10. * (fy - yc).abs());
         let (r, g, b);
         let mut overflow = 0.;
         if vx > 255. {

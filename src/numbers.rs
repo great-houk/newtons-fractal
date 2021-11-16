@@ -3,8 +3,20 @@
 
 pub mod imaginary {
     pub fn pow((real, imaginary): (f64, f64), power: f64) -> (f64, f64) {
-        let theta = (imaginary / real).atan();
+        let mut theta = (imaginary / real).atan();
+        if real < 0. || imaginary < 0. {
+            theta += 180.;
+        }
         let r = (real * real + imaginary * imaginary).powf(power / 2.);
         (r * (theta * power).cos(), r * (theta * power).sin())
+    }
+
+    pub fn square((real, imaginary): (f64, f64)) -> (f64, f64) {
+        let (rr, ri) = {
+            let r = real * real - imaginary * imaginary;
+            let i = 2. * real * imaginary;
+            (r, i)
+        };
+        (rr, ri)
     }
 }
