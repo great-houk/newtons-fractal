@@ -32,29 +32,35 @@ mod drawing {
         pixel_x: u32,
         pixel_y: u32,
     ) -> (u8, u8, u8, u8) {
-        let xc = (center_x - pixel_x as f64) / (scale * 50.);
-        let yc = (center_y - pixel_y as f64) / (scale * 50.);
+        let (xoff, yoff) = (-0.75, -0.1);
+        let xc = ((center_x - pixel_x as f64) / (scale * 50.)) + xoff;
+        let yc = ((center_y - pixel_y as f64) / (scale * 50.)) + yoff;
 
-        let (fx, fy) = square((xc, yc));
-        let (vx, vy) = (scale * 10. * (fx - xc).abs(), scale * 10. * (fy - yc).abs());
-        let (r, g, b);
-        let mut overflow = 0.;
-        if vx > 255. {
+        let (mut zx, mut zy) = (0., 0.);
+        for _ in 0..(nframes % 500) {
+            let (x, y) = square((zx, zy));
+            zx = x + xc;
+            zy = y + yc;
+        }
+        let r;
+        let g;
+        let b;
+        fn min(a: f64, b: f64) -> f64 {
+            if a < b {
+                a
+            } else {
+                b
+            }
+        }
+
+        if zx < 100. && zy < 100. {
             r = 255;
-            overflow += vx - 255.;
-        } else {
-            r = vx as u8;
-        }
-        if vy > 255. {
             g = 255;
-            overflow += vy - 255.;
-        } else {
-            g = vy as u8;
-        }
-        if overflow > 255. {
             b = 255;
         } else {
-            b = overflow as u8;
+            r = 0;
+            g = 0;
+            b = 0;
         }
 
         (r, g, b, 255)
@@ -64,6 +70,7 @@ mod drawing {
     /// Only is called once per frame, after everything has been rendered
     pub fn modify_data(data: &mut Data, nframes: usize) {
         // There's nothing to modify yet
+        data.scale = 1.0 + ((nframes % 500) as f64);
     }
 }
 
