@@ -2,7 +2,7 @@
 // Contains things like the operations struct, and the string numbers gen
 
 pub mod imaginary {
-    pub fn pow((real, imaginary): (f64, f64), power: f64) -> (f64, f64) {
+    pub fn _pow((real, imaginary): (f64, f64), power: f64) -> (f64, f64) {
         let mut theta = (imaginary / real).atan();
         if real < 0. || imaginary < 0. {
             theta += 180.;
@@ -11,7 +11,7 @@ pub mod imaginary {
         (r * (theta * power).cos(), r * (theta * power).sin())
     }
 
-    pub fn square((real, imaginary): (f64, f64)) -> (f64, f64) {
+    pub fn _square((real, imaginary): (f64, f64)) -> (f64, f64) {
         let (rr, ri) = {
             let r = real * real - imaginary * imaginary;
             let i = 2. * real * imaginary;
