@@ -315,11 +315,11 @@ mod render_backend {
             }
             Some(pointers)
         }
-        // Splits the array into slices based on the indices given in splits
-        // If splits == [1, 5, 7] you will get a vec with slices
-        // [0..1], [1..5], [5..7], [7..] if there is data left.
-        // As long as all values of
-        // splits are smaller than self.len() this will return Some()
+        /// Splits the array into slices based on the indices given in splits
+        /// If splits == [1, 5, 7] you will get a vec with slices
+        /// [0..1], [1..5], [5..7], [7..] if there is data left.
+        /// As long as all values of
+        /// splits are smaller than self.len() this will return Some()
         pub fn split_at_mut(&mut self, splits: &[usize]) -> Option<Vec<Option<&mut [u8]>>> {
             let mut pointers = Vec::with_capacity(splits.len());
             let mut start = 0;
@@ -345,15 +345,15 @@ mod render_backend {
             }
             Some(pointers)
         }
-        // Splits the array into slices based on the indices given in splits
-        // If splits == [1, 5, 7] you will get a vec with slices
-        // [0..1], [1..5], [5..7], [7..] if there is data left.
-        // As long as all values of
-        // splits are smaller than self.len() this will return Some()
-        // This function is unsafe because the slices are not linked
-        // to the lifetime of this struct in any way. That means
-        // that you need to guarantee that the slices will be dropped
-        // first, or undefined behavior will happen.
+        /// Splits the array into slices based on the indices given in splits
+        /// If splits == [1, 5, 7] you will get a vec with slices
+        /// [0..1], [1..5], [5..7], [7..] if there is data left.
+        /// As long as all values of
+        /// splits are smaller than self.len() this will return Some()
+        /// This function is unsafe because the slices are not linked
+        /// to the lifetime of this struct in any way. That means
+        /// that you need to guarantee that the slices will be dropped
+        /// first, or undefined behavior will happen.
         pub unsafe fn split_at_mut_unsafe<'a>(
             &mut self,
             splits: &[usize],
