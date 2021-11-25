@@ -2,6 +2,7 @@
 pub use render_backend::{main::main_loop, RenderOp};
 
 mod render_backend {
+    use pixels::Pixels;
     type Pixel = (u8, u8, u8, u8);
     type PixelSlice<'a> = (&'a mut [Pixel], usize, usize);
     type RenderOpReference = &'static Box<dyn RenderOp<Data = Box<dyn Sync>>>;
@@ -9,7 +10,12 @@ mod render_backend {
     pub trait RenderOp: Sync {
         type Data: Sync;
         fn get_pixels(&mut self) -> &mut Pixels;
-        fn get_slice<'a>(&mut self, ind: usize, max: usize) -> PixelSlice<'a>;
+        fn get_slice<'a>(&mut self, ind: usize, max: usize) -> PixelSlice<'a> {
+            let pixels = self.get_pixels();
+            let (slice, ind) = pixels.get_slice(ind, max);
+            let pitch = pixels.dimensions().0;
+            (slice, ind, pitch)
+        }
         fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
         fn init_data(&mut self);
         fn get_data(&self) -> &Self::Data;
@@ -146,6 +152,71 @@ mod render_backend {
                 };
                 let color = op.draw_pixel(pixel_x, pixel_y);
                 slice[i] = color;
+            }
+        }
+    }
+
+    pub mod pixels {
+        use super::Pixel;
+        use std::alloc::{alloc, dealloc, Layout, LayoutError};
+        use std::slice::from_raw_parts_mut;
+
+        pub struct Pixels {
+            width: usize,
+            height: usize,
+            ptr: *mut u8,
+            len: usize,
+        }
+
+        impl Pixels {
+            pub fn new(width: usize, height: usize) -> Result<Self, LayoutError> {
+                let len = width * height;
+                assert_eq!(len > 0, true);
+                let ptr = unsafe {
+                    let layout = Layout::array::<u8>(len * 4)?;
+                    alloc(layout) as *mut u8
+                };
+                Ok(Self {
+                    width,
+                    height,
+                    ptr,
+                    len: len * 4,
+                })
+            }
+
+            pub fn dimensions(&self) -> (usize, usize) {
+                (self.width, self.height)
+            }
+
+            pub unsafe fn get_slice<'a>(
+                &mut self,
+                ind: usize,
+                max: usize,
+            ) -> (&'a mut [Pixel], usize) {
+                assert_eq!(ind < max, true);
+                let offset = 4 * ((self.len / 4) / max);
+                let ptr = self.ptr.add(offset * ind);
+                let len;
+                if ind == max - 1 {
+                    len = self.len - (offset * ind);
+                } else {
+                    len = offset;
+                }
+                (
+                    from_raw_parts_mut(ptr as *mut (u8, u8, u8, u8), len),
+                    offset * ind,
+                )
+            }
+        }
+
+        impl Drop for Pixels {
+            fn drop(&mut self) {
+                unsafe {
+                    dealloc(
+                        self.ptr as *mut u8,
+                        Layout::array::<u8>(self.len).expect("Unreachable"),
+                    )
+                };
             }
         }
     }
