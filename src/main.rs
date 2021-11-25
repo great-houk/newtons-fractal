@@ -1,16 +1,17 @@
 extern crate sdl2;
+mod drawing;
 mod events;
 mod rendering;
 mod windows;
 
+use rendering::main_loop;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use sdl2::video::WindowPos;
-use std::sync::Arc;
+use std::sync::{mpsc, Arc};
 use std::thread;
 use std::time::Instant;
-use windows::GraphingWindow;
-use windows::Message;
+use windows::WindowBuilder;
 
 const MAIN_WIDTH: usize = 800;
 const MAIN_HEIGHT: usize = 600;
@@ -21,19 +22,27 @@ pub fn main() -> Result<(), String> {
     let video_subsystem = sdl_context.video().unwrap();
 
     // Call Main Window Init from windows.rs
-    let mut main_window = GraphingWindow::init(
+    let mut main_window = WindowBuilder::new(
         &video_subsystem,
         "➕Newton's Fractal➕",
-        MAIN_WIDTH,
-        MAIN_HEIGHT,
-        WindowPos::Centered,
-        WindowPos::Centered,
+        MAIN_WIDTH as u32,
+        MAIN_HEIGHT as u32,
     )
-    .unwrap();
+    .set_position(WindowPos::Centered, WindowPos::Centered)
+    .build()?;
 
     // Start rendering thread
+    let (ttx, rx) = mpsc::channel();
+    let (tx, trx) = mpsc::channel();
+    let main_thread = thread::spawn(move || main_loop((ttx, trx)));
 
     // Init rendering ops
+    let main_op = Arc::new(drawing::mandelbrot::Mandelbrot::init(
+        MAIN_WIDTH as u32,
+        MAIN_HEIGHT as u32,
+        0,
+        0,
+    ));
 
     // Send rendering ops
 

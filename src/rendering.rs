@@ -1,25 +1,30 @@
 // Holds all the drawing logic, like the graph rendering and the settings display
-pub use render_backend::{main::main_loop, RenderOp};
+pub use render_backend::{
+    main::main_loop, pixels::Pixels, Pixel, PixelSlice, RenderOp, RenderOpReference,
+};
 
 mod render_backend {
     use pixels::Pixels;
-    type Pixel = (u8, u8, u8, u8);
-    type PixelSlice<'a> = (&'a mut [Pixel], usize, usize);
-    type RenderOpReference = &'static Box<dyn RenderOp<Data = Box<dyn Sync>>>;
+    use sdl2::event::Event;
+    use sdl2::rect::Rect;
+    use std::sync::{Arc, RwLock};
+    pub type Pixel = (u8, u8, u8, u8);
+    pub type PixelSlice<'a> = (&'a mut [Pixel], usize, usize);
+    pub type RenderOpReference = Arc<RwLock<Box<dyn RenderOp + Send>>>;
 
     pub trait RenderOp: Sync {
-        type Data: Sync;
-        fn get_pixels(&mut self) -> &mut Pixels;
-        fn get_slice<'a>(&mut self, ind: usize, max: usize) -> PixelSlice<'a> {
+        fn get_rect(&self) -> &Rect;
+        fn get_pixels(&self) -> &Pixels;
+        fn get_pixels_mut(&mut self) -> &mut Pixels;
+        fn get_slice<'a>(&self, ind: usize, max: usize) -> PixelSlice<'a> {
             let pixels = self.get_pixels();
-            let (slice, ind) = pixels.get_slice(ind, max);
+            let (slice, ind) = unsafe { pixels.get_slice(ind, max) };
             let pitch = pixels.dimensions().0;
             (slice, ind, pitch)
         }
         fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
-        fn init_data(&mut self);
-        fn get_data(&self) -> &Self::Data;
-        fn modify_data(&self);
+        fn modify_data(&mut self);
+        fn handle_events(&mut self, events: &Vec<&Event>);
     }
 
     pub enum ThreadMessage {
@@ -38,7 +43,7 @@ mod render_backend {
         ) -> Result<(), String> {
             // Initialize all variables
             let cores = num_cpus::get() * 2;
-            let (mut handles, mut senders, mut receivers) = start_threads(cores)?;
+            let (handles, senders, receivers) = start_threads(cores)?;
             // Start main loop
             'main: loop {
                 // Wait for the window to give up control on the textures
@@ -46,20 +51,24 @@ mod render_backend {
                     Ok(ThreadMessage::Op(op)) => {
                         // Start Render
                         for sender in &senders {
-                            sender.send(Some(op)).unwrap();
+                            sender.send(Some(op.clone())).unwrap();
                         }
                         // Wait for threads to finish
                         for receiver in &receivers {
                             receiver.recv().unwrap();
                         }
-                        // Allow drawing logic to modify data
-                        let x = op.as_ref();
-                        x.modify_data();
+                        // Modify data
+                        {
+                            let mut op_mut = op.write().unwrap();
+                            // Allow drawing logic to modify data
+                            op_mut.modify_data();
+                        }
                         // Let main thread know we're done
                         sender
                             .send(op)
                             .expect("The Main Thread's Receiver is Dead!");
                     }
+                    Ok(ThreadMessage::Resize { width, height }) => {}
                     Ok(ThreadMessage::Quit) => {
                         break 'main;
                     }
@@ -96,8 +105,8 @@ mod render_backend {
                 let handle = spawn(move || {
                     draw_loop(ttx, trx, id, thread_count);
                 });
-                receivers.push(rx);
                 senders.push(tx);
+                receivers.push(rx);
                 handles.push(handle);
             }
             Ok((handles, senders, receivers))
@@ -118,7 +127,7 @@ mod render_backend {
     }
 
     pub mod drawing {
-        use super::{Pixels, RenderOpReference};
+        use super::{RenderOp, RenderOpReference};
         use std::sync::mpsc::{Receiver, Sender};
 
         pub fn draw_loop(
@@ -128,17 +137,19 @@ mod render_backend {
             thread_count: usize,
         ) {
             while let Ok(Some(op)) = receiver.recv() {
+                let op = op.read().unwrap();
                 // Get slice
                 let (slice, ind, pitch) = op.get_slice(id, thread_count);
                 // Modify pixels
-                draw_func(op, slice, ind, pitch);
-                // Tell logic thread we're done
+                draw_func(&op, slice, ind, pitch);
+                // Release read and let main thread know
+                drop(op);
                 sender.send(()).unwrap();
             }
         }
 
         fn draw_func(
-            op: RenderOpReference,
+            op: &Box<dyn RenderOp + Send>,
             slice: &mut [(u8, u8, u8, u8)],
             ind: usize,
             pitch: usize,
@@ -170,17 +181,24 @@ mod render_backend {
 
         impl Pixels {
             pub fn new(width: usize, height: usize) -> Result<Self, LayoutError> {
-                let len = width * height;
-                assert_eq!(len > 0, true);
+                let len = 4 * width * height;
+                if len == 0 {
+                    return Ok(Self {
+                        width,
+                        height,
+                        ptr: 0 as *mut u8,
+                        len: 0,
+                    });
+                }
                 let ptr = unsafe {
-                    let layout = Layout::array::<u8>(len * 4)?;
+                    let layout = Layout::array::<u8>(len)?;
                     alloc(layout) as *mut u8
                 };
                 Ok(Self {
                     width,
                     height,
                     ptr,
-                    len: len * 4,
+                    len,
                 })
             }
 
@@ -188,11 +206,10 @@ mod render_backend {
                 (self.width, self.height)
             }
 
-            pub unsafe fn get_slice<'a>(
-                &mut self,
-                ind: usize,
-                max: usize,
-            ) -> (&'a mut [Pixel], usize) {
+            pub unsafe fn get_slice<'a>(&self, ind: usize, max: usize) -> (&'a mut [Pixel], usize) {
+                if self.len == 0 {
+                    return (&mut [], 0);
+                }
                 assert_eq!(ind < max, true);
                 let offset = 4 * ((self.len / 4) / max);
                 let ptr = self.ptr.add(offset * ind);
@@ -203,11 +220,32 @@ mod render_backend {
                     len = offset;
                 }
                 (
-                    from_raw_parts_mut(ptr as *mut (u8, u8, u8, u8), len),
+                    from_raw_parts_mut(ptr as *mut (u8, u8, u8, u8), len / 4),
                     offset * ind,
                 )
             }
         }
+
+        impl<'a> From<&'a Pixels> for &'a [u8] {
+            fn from(pixels: &'a Pixels) -> &'a [u8] {
+                if pixels.len == 0 {
+                    return &[];
+                }
+                unsafe { from_raw_parts_mut(pixels.ptr, pixels.len) }
+            }
+        }
+
+        impl<'a> From<&'a Pixels> for &'a [Pixel] {
+            fn from(pixels: &'a Pixels) -> &'a [Pixel] {
+                if pixels.len == 0 {
+                    return &[];
+                }
+                unsafe { from_raw_parts_mut(pixels.ptr as *mut Pixel, pixels.len / 4) }
+            }
+        }
+
+        unsafe impl Send for Pixels {}
+        unsafe impl Sync for Pixels {}
 
         impl Drop for Pixels {
             fn drop(&mut self) {
