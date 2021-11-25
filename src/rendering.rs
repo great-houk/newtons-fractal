@@ -19,16 +19,17 @@ mod drawing {
     /// Initializes the Data type
     pub fn get_draw_data(width: u32, height: u32) -> Data {
         // Basic numbers
-        let window_width = 2.;
-        let window_height = 2.;
+        let window_width = 3.;
+        let window_height = 3.;
         // 0.001643721971153 − 0.822467633298876i
         // -0.761574 - 0.0847596i
         // -e/7 - e/20i
         // -0.10715079727776 - 0.91210278793461i
         // -1.74790375491685 + 0.00194820459426i
         // -0.52303294558693 + 0.52633610977926i
-        let window_x = -1.74790375491685;
-        let window_y = 0.00194820459426;
+        //
+        let window_x = 0.001643721971153;
+        let window_y = -0.822467633298876;
         // Calculate useful numbers from those
         let (x_ratio, x_offset, y_ratio, y_offset) = get_mandelbrot_vals(
             window_width,
@@ -73,7 +74,7 @@ mod drawing {
         let mut y = 0.;
         let mut iteration = 0;
         let it_mod;
-        const MAX_ITERATION: usize = 1 << 8;
+        const MAX_ITERATION: usize = 1 << 10;
         // Here N = 2^8 is chosen as a reasonable bailout radius.
 
         while x * x + y * y <= (1 << 16) as f64 && iteration < MAX_ITERATION {
@@ -152,7 +153,7 @@ mod drawing {
         }: &mut Data,
         _nframes: usize,
     ) {
-        let scale = 1.03;
+        let scale = 1.02;
         *window_width /= scale;
         *window_height /= scale;
         // Calculate useful numbers from those
@@ -391,7 +392,9 @@ mod render_backend {
     }
     #[allow(dead_code)]
     impl Pixels {
+        /// Makes a new array of u8 size len. Panics if len == 0
         pub fn new(len: usize) -> Result<Self, LayoutError> {
+            assert_eq!(len > 0, true);
             let ptr = unsafe {
                 let layout = Layout::array::<u8>(len)?;
                 alloc(layout) as *mut u8
@@ -477,29 +480,29 @@ mod render_backend {
             &mut self,
             splits: &[usize],
         ) -> Option<Vec<&'a mut [u8]>> {
-            let mut pointers = Vec::with_capacity(splits.len());
+            let mut slices = Vec::with_capacity(splits.len());
             let mut start = 0;
             for &split in splits {
                 if split > self.len || split < start {
                     return None;
                 }
-                let pointer = {
+                let slice = {
                     let addr = self.ptr.add(start);
                     let len = split - start;
                     std::slice::from_raw_parts_mut(addr, len)
                 };
-                pointers.push(pointer);
+                slices.push(slice);
                 start = split;
             }
             if start < self.len {
-                let pointer = {
+                let slice = {
                     let addr = self.ptr.add(start);
                     let len = self.len - start;
                     std::slice::from_raw_parts_mut(addr, len)
                 };
-                pointers.push(pointer);
+                slices.push(slice);
             }
-            Some(pointers)
+            Some(slices)
         }
         pub fn len(&self) -> usize {
             self.len
