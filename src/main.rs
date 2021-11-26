@@ -4,7 +4,7 @@ mod events;
 mod rendering;
 mod windows;
 
-use rendering::main_loop;
+use rendering::{main_loop, RenderOpReference, ThreadMessage};
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
 use sdl2::video::WindowPos;
@@ -20,6 +20,11 @@ pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
+    let mut event_pump = sdl_context.event_pump().unwrap();
+    let event_system = sdl_context.event().unwrap();
+    event_system
+        .register_custom_event::<RenderOpReference>()
+        .unwrap();
 
     // Call Main Window Init from windows.rs
     let mut main_window = WindowBuilder::new(
@@ -27,6 +32,7 @@ pub fn main() -> Result<(), String> {
         "➕Newton's Fractal➕",
         MAIN_WIDTH as u32,
         MAIN_HEIGHT as u32,
+        |a, b| (a, b),
     )
     .set_position(WindowPos::Centered, WindowPos::Centered)
     .build()?;
@@ -34,21 +40,16 @@ pub fn main() -> Result<(), String> {
     // Start rendering thread
     let (ttx, rx) = mpsc::channel();
     let (tx, trx) = mpsc::channel();
-    let main_thread = thread::spawn(move || main_loop((ttx, trx)));
+    let main_thread = thread::spawn(move || main_loop(ttx, trx));
 
     // Init rendering ops
-    let main_op = Arc::new(drawing::mandelbrot::Mandelbrot::init(
-        MAIN_WIDTH as u32,
-        MAIN_HEIGHT as u32,
-        0,
-        0,
-    ));
+    let main_op = drawing::Mandelbrot::init();
 
     // Send rendering ops
+    tx.send(ThreadMessage::op(main_op)).unwrap();
 
     // Start the event loop, handle all events, and manage rendering ops's
     // status. Also, keep track of and print framerate.
-    let mut event_pump = sdl_context.event_pump().unwrap();
     let mut now = Instant::now();
     'running: loop {
         // Handle Events
@@ -63,11 +64,24 @@ pub fn main() -> Result<(), String> {
                 } => {
                     break 'running;
                 }
+                // If a window resizes, then we need to tell it
+                Event::Window {
+                    win_event: WindowEvent::Resized(wid, hei),
+                    window_id: id,
+                    ..
+                } => {
+                    if id == main_window.canvas().window().id() {
+                        main_window.resized(wid as usize, hei as usize).unwrap();
+                    } else {
+                        return Err("Window Resize Event Fail".to_string());
+                    }
+                }
                 // Default: Send event off to the event thread
                 _ => {}
             }
         }
         // Handle finished rendering
+        for op in rx.try_iter() {}
     }
     Ok(())
 }

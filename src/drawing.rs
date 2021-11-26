@@ -1,5 +1,8 @@
-pub mod mandelbrot {
+pub use mandelbrot::Mandelbrot;
+
+mod mandelbrot {
     use crate::rendering::{Pixel, Pixels, RenderOp};
+    use crate::{MAIN_HEIGHT, MAIN_WIDTH};
     use sdl2::event::Event;
     use sdl2::rect::Rect;
     struct Data {
@@ -23,11 +26,11 @@ pub mod mandelbrot {
     }
 
     impl Mandelbrot {
-        pub fn init(width: u32, height: u32, x: u32, y: u32) -> Self {
-            let rect = Rect::new(x as i32, y as i32, width, height);
-            let pixels = Pixels::new(width as usize, height as usize).unwrap();
-            let data = Self::init_data(width, height);
-            Mandelbrot { rect, pixels, data }
+        pub fn init() -> Box<Self> {
+            let rect = Rect::new(0, 0, MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
+            let pixels = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
+            let data = Self::init_data(MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
+            Box::new(Mandelbrot { rect, pixels, data })
         }
 
         fn init_data(width: u32, height: u32) -> Data {
@@ -200,6 +203,11 @@ pub mod mandelbrot {
             *y_ratio = yr;
             *y_offset = yo;
         }
-        fn handle_events(&mut self, _events: &Vec<&Event>) {}
+        fn handle_event(&mut self, event: &Event) -> bool {
+            match event {
+                
+            }
+            false
+        }
     }
 }

@@ -3,7 +3,10 @@ use sdl2::pixels::PixelFormatEnum;
 use sdl2::render::{Canvas, RenderTarget, Texture};
 use sdl2::video::{Window as SDL2Window, WindowPos};
 
-pub struct WindowBuilder<'a> {
+pub trait ResizeFn: Fn(usize, usize) -> (usize, usize) {}
+impl<T: Fn(usize, usize) -> (usize, usize)> ResizeFn for T {}
+
+pub struct WindowBuilder<'a, T: ResizeFn> {
     video_subsystem: &'a sdl2::VideoSubsystem,
     title: &'static str,
     width: u32,
@@ -18,16 +21,18 @@ pub struct WindowBuilder<'a> {
     hidden: bool,
     borderless: bool,
     fullscreen: bool,
+    resize_func: T,
 }
 
 #[allow(dead_code)]
-impl WindowBuilder<'_> {
+impl<T: ResizeFn> WindowBuilder<'_, T> {
     pub fn new<'a>(
         video_subsystem: &'a sdl2::VideoSubsystem,
         title: &'static str,
         width: u32,
         height: u32,
-    ) -> WindowBuilder<'a> {
+        resize_func: T,
+    ) -> WindowBuilder<'a, T> {
         WindowBuilder {
             video_subsystem,
             title,
@@ -43,64 +48,66 @@ impl WindowBuilder<'_> {
             hidden: false,
             borderless: false,
             fullscreen: false,
+            resize_func,
         }
     }
 
-    pub fn set_min_size(&mut self, width: Option<u32>, height: Option<u32>) -> &mut Self {
+    pub fn set_min_size(mut self, width: Option<u32>, height: Option<u32>) -> Self {
         self.min_width = width;
         self.min_height = height;
         self
     }
 
-    pub fn set_max_size(&mut self, width: Option<u32>, height: Option<u32>) -> &mut Self {
+    pub fn set_max_size(mut self, width: Option<u32>, height: Option<u32>) -> Self {
         self.max_width = width;
         self.max_height = height;
         self
     }
 
-    pub fn set_position(&mut self, posx: WindowPos, posy: WindowPos) -> &mut Self {
+    pub fn set_position(mut self, posx: WindowPos, posy: WindowPos) -> Self {
         self.posx = posx;
         self.posy = posy;
         self
     }
 
-    pub fn set_resizable(&mut self, b: bool) -> &mut Self {
+    pub fn set_resizable(mut self, b: bool) -> Self {
         self.resizable = b;
         self
     }
-    pub fn set_hidden(&mut self, b: bool) -> &mut Self {
+    pub fn set_hidden(mut self, b: bool) -> Self {
         self.hidden = b;
         self
     }
-    pub fn set_borderless(&mut self, b: bool) -> &mut Self {
+    pub fn set_borderless(mut self, b: bool) -> Self {
         self.borderless = b;
         self
     }
-    pub fn set_fullscreen(&mut self, b: bool) -> &mut Self {
+    pub fn set_fullscreen(mut self, b: bool) -> Self {
         self.fullscreen = b;
         self
     }
-    pub fn build(&self) -> Result<Window, String> {
+    pub fn build(self) -> Result<Window<T>, String> {
         Window::init(self)
     }
 }
 
-pub struct Window {
+pub struct Window<T: ResizeFn> {
     canvas: Canvas<SDL2Window>,
     texture: Texture,
     width: usize,
     height: usize,
+    resize_func: T,
 }
-impl Window {
-    fn init(builder: &WindowBuilder) -> Result<Window, String> {
+impl<T: ResizeFn> Window<T> {
+    fn init(builder: WindowBuilder<T>) -> Result<Window<T>, String> {
         let mut window = {
             let mut win =
                 builder
                     .video_subsystem
                     .window(builder.title, builder.width, builder.height);
             win.position(
-                Window::to_ll_windowpos(builder.posx),
-                Window::to_ll_windowpos(builder.posy),
+                Window::<T>::to_ll_windowpos(builder.posx),
+                Window::<T>::to_ll_windowpos(builder.posy),
             );
             if builder.resizable {
                 win.resizable();
@@ -142,6 +149,7 @@ impl Window {
             width: builder.width as usize,
             height: builder.height as usize,
             texture,
+            resize_func: builder.resize_func,
         })
     }
     pub fn canvas(&self) -> &Canvas<SDL2Window> {
@@ -150,21 +158,22 @@ impl Window {
     pub fn canvas_mut(&mut self) -> &mut Canvas<SDL2Window> {
         &mut self.canvas
     }
-    fn to_ll_windowpos(pos: WindowPos) -> i32 {
-        match pos {
-            WindowPos::Undefined => sdl2_sys::SDL_WINDOWPOS_UNDEFINED_MASK as i32,
-            WindowPos::Centered => sdl2_sys::SDL_WINDOWPOS_CENTERED_MASK as i32,
-            WindowPos::Positioned(x) => x as i32,
-        }
-    }
     pub fn size(&self) -> (usize, usize) {
         (self.width, self.height)
     }
     pub fn resized(&mut self, width: usize, height: usize) -> Result<(), String> {
-        self.width = width;
-        self.height = height;
+        let (w, h) = (self.resize_func)(width, height);
+        self.width = w;
+        self.height = h;
+        // Set window size if it needs to be changed
+        if w != width || h != height {
+            self.canvas_mut()
+                .window_mut()
+                .set_size(w as u32, h as u32)
+                .map_err(|e| e.to_string())?;
+        }
         // Remake textures to fit
-        self.texture = Self::make_texture(self.canvas_mut(), width, height)?;
+        self.texture = Self::make_texture(self.canvas_mut(), w, h)?;
         Ok(())
     }
     fn make_texture(
@@ -176,5 +185,12 @@ impl Window {
             .create_texture_target(PixelFormatEnum::ABGR8888, width as u32, height as u32)
             .map_err(|e| e.to_string())?;
         Ok(texture)
+    }
+    fn to_ll_windowpos(pos: WindowPos) -> i32 {
+        match pos {
+            WindowPos::Undefined => sdl2_sys::SDL_WINDOWPOS_UNDEFINED_MASK as i32,
+            WindowPos::Centered => sdl2_sys::SDL_WINDOWPOS_CENTERED_MASK as i32,
+            WindowPos::Positioned(x) => x as i32,
+        }
     }
 }

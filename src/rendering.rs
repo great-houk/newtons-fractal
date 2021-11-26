@@ -1,6 +1,6 @@
 // Holds all the drawing logic, like the graph rendering and the settings display
 pub use render_backend::{
-    main::main_loop, pixels::Pixels, Pixel, PixelSlice, RenderOp, RenderOpReference,
+    main::main_loop, pixels::Pixels, Pixel, PixelSlice, RenderOp, RenderOpReference, ThreadMessage,
 };
 
 mod render_backend {
@@ -24,7 +24,7 @@ mod render_backend {
         }
         fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
         fn modify_data(&mut self);
-        fn handle_events(&mut self, events: &Vec<&Event>);
+        fn handle_event(&mut self, event: &Event) -> bool;
     }
 
     pub enum ThreadMessage {
@@ -33,13 +33,20 @@ mod render_backend {
         Quit,
     }
 
+    impl ThreadMessage {
+        pub fn op(op: Box<dyn RenderOp + Send>) -> ThreadMessage {
+            Self::Op(Arc::new(RwLock::new(op)))
+        }
+    }
+
     pub mod main {
         use super::threading::{end_threads, start_threads};
         use super::{RenderOpReference, ThreadMessage};
         use std::sync::mpsc::{Receiver, Sender};
 
         pub fn main_loop(
-            (sender, receiver): (Sender<RenderOpReference>, Receiver<ThreadMessage>),
+            sender: Sender<RenderOpReference>,
+            receiver: Receiver<ThreadMessage>,
         ) -> Result<(), String> {
             // Initialize all variables
             let cores = num_cpus::get() * 2;
