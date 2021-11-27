@@ -1,12 +1,13 @@
 // All Used Windows
 use sdl2::pixels::PixelFormatEnum;
+use sdl2::rect::Rect;
 use sdl2::render::{Canvas, RenderTarget, Texture};
 use sdl2::video::{Window as SDL2Window, WindowPos};
 
 pub trait ResizeFn: Fn(usize, usize) -> (usize, usize) {}
 impl<T: Fn(usize, usize) -> (usize, usize)> ResizeFn for T {}
 
-pub struct WindowBuilder<'a, T: ResizeFn> {
+pub struct WindowBuilder<'a> {
     video_subsystem: &'a sdl2::VideoSubsystem,
     title: &'static str,
     width: u32,
@@ -21,18 +22,18 @@ pub struct WindowBuilder<'a, T: ResizeFn> {
     hidden: bool,
     borderless: bool,
     fullscreen: bool,
-    resize_func: T,
+    resize_func: Box<dyn ResizeFn>,
 }
 
 #[allow(dead_code)]
-impl<T: ResizeFn> WindowBuilder<'_, T> {
-    pub fn new<'a>(
+impl WindowBuilder<'_> {
+    pub fn new<'a, T: 'static + ResizeFn>(
         video_subsystem: &'a sdl2::VideoSubsystem,
         title: &'static str,
         width: u32,
         height: u32,
         resize_func: T,
-    ) -> WindowBuilder<'a, T> {
+    ) -> WindowBuilder<'a> {
         WindowBuilder {
             video_subsystem,
             title,
@@ -48,7 +49,7 @@ impl<T: ResizeFn> WindowBuilder<'_, T> {
             hidden: false,
             borderless: false,
             fullscreen: false,
-            resize_func,
+            resize_func: Box::new(resize_func),
         }
     }
 
@@ -86,28 +87,29 @@ impl<T: ResizeFn> WindowBuilder<'_, T> {
         self.fullscreen = b;
         self
     }
-    pub fn build(self) -> Result<Window<T>, String> {
+    pub fn build(self) -> Result<Window, String> {
         Window::init(self)
     }
 }
 
-pub struct Window<T: ResizeFn> {
+pub struct Window {
     canvas: Canvas<SDL2Window>,
     texture: Texture,
     width: usize,
     height: usize,
-    resize_func: T,
+    resize_func: Box<dyn ResizeFn>,
 }
-impl<T: ResizeFn> Window<T> {
-    fn init(builder: WindowBuilder<T>) -> Result<Window<T>, String> {
+#[allow(dead_code)]
+impl Window {
+    fn init(builder: WindowBuilder) -> Result<Window, String> {
         let mut window = {
             let mut win =
                 builder
                     .video_subsystem
                     .window(builder.title, builder.width, builder.height);
             win.position(
-                Window::<T>::to_ll_windowpos(builder.posx),
-                Window::<T>::to_ll_windowpos(builder.posy),
+                Window::to_ll_windowpos(builder.posx),
+                Window::to_ll_windowpos(builder.posy),
             );
             if builder.resizable {
                 win.resizable();
@@ -176,6 +178,16 @@ impl<T: ResizeFn> Window<T> {
         self.texture = Self::make_texture(self.canvas_mut(), w, h)?;
         Ok(())
     }
+    pub fn present<'a, T: Into<&'a [u8]>>(&mut self, pixels: T, rect: Rect) {
+        let data = pixels.into();
+        let _b = &data;
+        self.texture
+            .update(rect, data, rect.width() as usize * 4)
+            .unwrap();
+        let texture = unsafe { &*(&self.texture as *const Texture) };
+        self.canvas_mut().copy(texture, rect, rect).unwrap();
+        self.canvas_mut().present();
+    }
     fn make_texture(
         canvas: &mut Canvas<impl RenderTarget>,
         width: usize,
@@ -194,3 +206,5 @@ impl<T: ResizeFn> Window<T> {
         }
     }
 }
+
+unsafe impl Send for Window {}

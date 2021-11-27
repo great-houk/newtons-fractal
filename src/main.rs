@@ -4,11 +4,10 @@ mod events;
 mod rendering;
 mod windows;
 
-use rendering::{main_loop, RenderOpReference, ThreadMessage};
-use sdl2::event::{Event, WindowEvent};
-use sdl2::keyboard::Keycode;
+use events::MainEvent;
+use rendering::{main_loop, ThreadMessage};
 use sdl2::video::WindowPos;
-use std::sync::{mpsc, Arc};
+use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
 use std::time::Instant;
 use windows::WindowBuilder;
@@ -20,68 +19,68 @@ pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
     let sdl_context = sdl2::init().unwrap();
     let video_subsystem = sdl_context.video().unwrap();
-    let mut event_pump = sdl_context.event_pump().unwrap();
     let event_system = sdl_context.event().unwrap();
-    event_system
-        .register_custom_event::<RenderOpReference>()
-        .unwrap();
+    event_system.register_custom_event::<MainEvent>().unwrap();
 
     // Call Main Window Init from windows.rs
-    let mut main_window = WindowBuilder::new(
-        &video_subsystem,
-        "➕Newton's Fractal➕",
-        MAIN_WIDTH as u32,
-        MAIN_HEIGHT as u32,
-        |a, b| (a, b),
-    )
-    .set_position(WindowPos::Centered, WindowPos::Centered)
-    .build()?;
+    let main_window = Arc::new(Mutex::new(
+        WindowBuilder::new(
+            &video_subsystem,
+            "➕Newton's Fractal➕",
+            MAIN_WIDTH as u32,
+            MAIN_HEIGHT as u32,
+            |a, b| (a, b),
+        )
+        .set_position(WindowPos::Centered, WindowPos::Centered)
+        .build()?,
+    ));
 
     // Start rendering thread
     let (ttx, rx) = mpsc::channel();
     let (tx, trx) = mpsc::channel();
-    let main_thread = thread::spawn(move || main_loop(ttx, trx));
+    let rendering_transmitter = event_system.event_sender();
+    let main_thread = thread::spawn(move || main_loop(rendering_transmitter, trx));
 
     // Init rendering ops
-    let main_op = drawing::Mandelbrot::init();
+    let main_op = drawing::Mandelbrot::init(main_window.clone());
+
+    // Init event watcher
+    let _event_watcher =
+        events::EventWatcher::init(&event_system, ttx, vec![main_window], vec![main_op.clone()]);
 
     // Send rendering ops
-    tx.send(ThreadMessage::op(main_op)).unwrap();
+    tx.send(ThreadMessage::Op(main_op.clone())).unwrap();
 
     // Start the event loop, handle all events, and manage rendering ops's
     // status. Also, keep track of and print framerate.
     let mut now = Instant::now();
-    'running: loop {
+    loop {
         // Handle Events
-        for event in event_pump.poll_iter() {
+        for event in rx.iter() {
             match event {
-                // If sdl2 wants to quite or escape is pressed,
-                // Then quit
-                Event::Quit { .. }
-                | Event::KeyDown {
-                    keycode: Some(Keycode::Escape),
-                    ..
-                } => {
-                    break 'running;
+                MainEvent::Quit(result) => {
+                    tx.send(ThreadMessage::Quit).unwrap();
+                    main_thread
+                        .join()
+                        .expect("rendering thread panicked")
+                        .unwrap();
+                    return result;
                 }
-                // If a window resizes, then we need to tell it
-                Event::Window {
-                    win_event: WindowEvent::Resized(wid, hei),
-                    window_id: id,
-                    ..
-                } => {
-                    if id == main_window.canvas().window().id() {
-                        main_window.resized(wid as usize, hei as usize).unwrap();
-                    } else {
-                        return Err("Window Resize Event Fail".to_string());
-                    }
+                MainEvent::RenderOpFinish(op) => {
+                    let op = op.read().unwrap();
+                    let window = op.get_window();
+                    let mut window_mut = window.lock().unwrap();
+                    window_mut.present(op.get_pixels(), *op.get_rect());
+                    // Framerate
+                    let time_elapsed = Instant::elapsed(&now).as_micros();
+                    now = Instant::now();
+                    let fr = 1_000_000 / time_elapsed;
+                    println!("Framerate: {}", fr);
                 }
-                // Default: Send event off to the event thread
-                _ => {}
+                MainEvent::RenderOpStart(op) => {
+                    tx.send(ThreadMessage::Op(op)).unwrap();
+                }
             }
         }
-        // Handle finished rendering
-        for op in rx.try_iter() {}
     }
-    Ok(())
 }

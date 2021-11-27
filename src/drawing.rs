@@ -1,10 +1,13 @@
 pub use mandelbrot::Mandelbrot;
 
 mod mandelbrot {
-    use crate::rendering::{Pixel, Pixels, RenderOp};
+    use crate::events::{MainEvent, SDL_Event};
+    use crate::rendering::{Pixel, Pixels, RenderOp, RenderOpReference};
+    use crate::windows::Window;
     use crate::{MAIN_HEIGHT, MAIN_WIDTH};
     use sdl2::event::Event;
     use sdl2::rect::Rect;
+    use std::sync::{Arc, Mutex, RwLock};
     struct Data {
         x_ratio: f64,
         x_offset: f64,
@@ -20,17 +23,28 @@ mod mandelbrot {
     }
 
     pub struct Mandelbrot {
+        window: Arc<Mutex<Window>>,
         rect: Rect,
         pixels: Pixels,
         data: Data,
+        event_list: Mutex<Vec<SDL_Event>>,
+        open: bool,
     }
 
     impl Mandelbrot {
-        pub fn init() -> Box<Self> {
+        pub fn init(window: Arc<Mutex<Window>>) -> RenderOpReference {
             let rect = Rect::new(0, 0, MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
             let pixels = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
             let data = Self::init_data(MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
-            Box::new(Mandelbrot { rect, pixels, data })
+            let event_list = Mutex::new(vec![]);
+            Arc::new(RwLock::new(Box::new(Mandelbrot {
+                window,
+                rect,
+                pixels,
+                data,
+                event_list,
+                open: true,
+            })))
         }
 
         fn init_data(width: u32, height: u32) -> Data {
@@ -87,6 +101,9 @@ mod mandelbrot {
     }
 
     impl RenderOp for Mandelbrot {
+        fn get_window(&self) -> Arc<Mutex<Window>> {
+            self.window.clone()
+        }
         fn get_rect(&self) -> &Rect {
             &self.rect
         }
@@ -104,26 +121,28 @@ mod mandelbrot {
                 y_offset,
                 ..
             } = self.data;
-            // (((2 * x) / width) - 1) * (windwid / 2) =  (windwid / width) * x - windwid / 2 - xoff;
+            // (((2 * x) / width) - 1) * (wind_wid / 2) =  (wind_wid / width) * x - wind_wid / 2 - x_off;
             let x0 = x_ratio * pixel_x as f64 - x_offset;
             let y0 = y_ratio * pixel_y as f64 - y_offset;
-            let mut x = 0.;
-            let mut y = 0.;
+            let mut x_coord = 0.;
+            let mut y_coord = 0.;
             let mut iteration = 0;
             let it_mod;
             const MAX_ITERATION: usize = 1 << 10;
             // Here N = 2^8 is chosen as a reasonable bailout radius.
 
-            while x * x + y * y <= (1 << 16) as f64 && iteration < MAX_ITERATION {
-                let xtemp = x * x - y * y + x0;
-                y = 2. * x * y + y0;
-                x = xtemp;
-                iteration = iteration + 1
+            while x_coord * x_coord + y_coord * y_coord <= (1 << 16) as f64
+                && iteration < MAX_ITERATION
+            {
+                let x_temp = x_coord * x_coord - y_coord * y_coord + x0;
+                y_coord = 2. * x_coord * y_coord + y0;
+                x_coord = x_temp;
+                iteration += 1;
             }
             // Used to avoid floating point issues with points inside the set.
             if iteration < MAX_ITERATION {
                 // sqrt of inner term removed using log simplification rules.
-                let log_zn = (x * x + y * y).ln() / 2.;
+                let log_zn = (x_coord * x_coord + y_coord * y_coord).ln() / 2.;
                 let nu = (log_zn / std::f64::consts::LN_2).ln() / std::f64::consts::LN_2;
                 // Rearranging the potential function.
                 // Dividing log_zn by log(2) instead of log(N = 1<<8)
@@ -203,11 +222,37 @@ mod mandelbrot {
             *y_ratio = yr;
             *y_offset = yo;
         }
-        fn handle_event(&mut self, event: &Event) -> bool {
-            match event {
-                
+        fn push_event(&self, event: SDL_Event) {
+            let mut list = self.event_list.lock().unwrap();
+            list.push(event);
+        }
+        fn handle_events(&self) -> bool {
+            let list = self.event_list.lock().unwrap();
+            let mut ret = false;
+            for event in &*list {
+                match event {
+                    SDL_Event::User(event) => match event {
+                        MainEvent::RenderOpFinish(op) => {
+                            let temp = op.read().unwrap();
+                            let op_ref = temp.as_ref();
+                            if op_ref as *const dyn RenderOp == self as &dyn RenderOp {
+                                ret |= true;
+                            } else {
+                                ret |= false;
+                            }
+                        }
+                        _ => ret |= false,
+                    },
+                    _ => ret |= false,
+                }
             }
-            false
+            ret
+        }
+        fn set_open(&mut self, state: bool) {
+            self.open = state;
+        }
+        fn get_open(&self) -> bool {
+            self.open
         }
     }
 }

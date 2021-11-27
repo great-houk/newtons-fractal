@@ -4,15 +4,18 @@ pub use render_backend::{
 };
 
 mod render_backend {
+    use crate::events::SDL_Event;
+    use crate::windows::Window;
     use pixels::Pixels;
     use sdl2::event::Event;
     use sdl2::rect::Rect;
-    use std::sync::{Arc, RwLock};
+    use std::sync::{Arc, Mutex, RwLock};
     pub type Pixel = (u8, u8, u8, u8);
     pub type PixelSlice<'a> = (&'a mut [Pixel], usize, usize);
     pub type RenderOpReference = Arc<RwLock<Box<dyn RenderOp + Send>>>;
 
     pub trait RenderOp: Sync {
+        fn get_window(&self) -> Arc<Mutex<Window>>;
         fn get_rect(&self) -> &Rect;
         fn get_pixels(&self) -> &Pixels;
         fn get_pixels_mut(&mut self) -> &mut Pixels;
@@ -24,38 +27,41 @@ mod render_backend {
         }
         fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
         fn modify_data(&mut self);
-        fn handle_event(&mut self, event: &Event) -> bool;
+        fn handle_events(&self) -> bool;
+        fn push_event(&self, event: SDL_Event);
+        fn set_open(&mut self, state: bool);
+        fn get_open(&self) -> bool;
     }
 
     pub enum ThreadMessage {
         Op(RenderOpReference),
-        Resize { width: usize, height: usize },
         Quit,
-    }
-
-    impl ThreadMessage {
-        pub fn op(op: Box<dyn RenderOp + Send>) -> ThreadMessage {
-            Self::Op(Arc::new(RwLock::new(op)))
-        }
     }
 
     pub mod main {
         use super::threading::{end_threads, start_threads};
-        use super::{RenderOpReference, ThreadMessage};
-        use std::sync::mpsc::{Receiver, Sender};
+        use super::ThreadMessage;
+        use crate::events::MainEvent;
+        use sdl2::event::EventSender;
+        use std::sync::mpsc::Receiver;
 
         pub fn main_loop(
-            sender: Sender<RenderOpReference>,
+            sender: EventSender,
             receiver: Receiver<ThreadMessage>,
         ) -> Result<(), String> {
             // Initialize all variables
-            let cores = num_cpus::get() * 2;
+            let cores = 2; //num_cpus::get() * 2;
             let (handles, senders, receivers) = start_threads(cores)?;
             // Start main loop
             'main: loop {
                 // Wait for the window to give up control on the textures
                 match receiver.recv() {
                     Ok(ThreadMessage::Op(op)) => {
+                        // Set op as closed
+                        {
+                            let mut op_mut = op.write().unwrap();
+                            op_mut.set_open(false);
+                        }
                         // Start Render
                         for sender in &senders {
                             sender.send(Some(op.clone())).unwrap();
@@ -70,12 +76,16 @@ mod render_backend {
                             // Allow drawing logic to modify data
                             op_mut.modify_data();
                         }
+                        // Set op to open
+                        {
+                            let mut op_mut = op.write().unwrap();
+                            op_mut.set_open(true);
+                        }
                         // Let main thread know we're done
                         sender
-                            .send(op)
-                            .expect("The Main Thread's Receiver is Dead!");
+                            .push_custom_event(MainEvent::RenderOpFinish(op.clone()))
+                            .unwrap();
                     }
-                    Ok(ThreadMessage::Resize { width, height }) => {}
                     Ok(ThreadMessage::Quit) => {
                         break 'main;
                     }
@@ -155,13 +165,14 @@ mod render_backend {
             }
         }
 
+        #[allow(clippy::borrowed_box)]
         fn draw_func(
             op: &Box<dyn RenderOp + Send>,
             slice: &mut [(u8, u8, u8, u8)],
             ind: usize,
             pitch: usize,
         ) {
-            for i in 0..slice.len() {
+            for (i, pixel) in slice.iter_mut().enumerate() {
                 let total_ind = i + ind;
                 let (pixel_x, pixel_y) = {
                     let x = total_ind % pitch;
@@ -169,7 +180,7 @@ mod render_backend {
                     (x, y)
                 };
                 let color = op.draw_pixel(pixel_x, pixel_y);
-                slice[i] = color;
+                *pixel = color;
             }
         }
     }
@@ -193,7 +204,7 @@ mod render_backend {
                     return Ok(Self {
                         width,
                         height,
-                        ptr: 0 as *mut u8,
+                        ptr: std::ptr::null_mut::<u8>(),
                         len: 0,
                     });
                 }
@@ -217,7 +228,7 @@ mod render_backend {
                 if self.len == 0 {
                     return (&mut [], 0);
                 }
-                assert_eq!(ind < max, true);
+                assert!(ind < max);
                 let offset = 4 * ((self.len / 4) / max);
                 let ptr = self.ptr.add(offset * ind);
                 let len;
