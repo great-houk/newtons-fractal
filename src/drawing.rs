@@ -49,8 +49,8 @@ mod mandelbrot {
 
         fn init_data(width: u32, height: u32) -> Data {
             // Basic numbers
-            let window_width = 3.;
             let window_height = 3.;
+            let window_width = window_height * (width as f64 / height as f64);
             // 0.001643721971153 − 0.822467633298876i
             // -0.761574 - 0.0847596i
             // -e/7 - e/20i
@@ -227,26 +227,23 @@ mod mandelbrot {
             list.push(event);
         }
         fn handle_events(&self) -> bool {
-            let list = self.event_list.lock().unwrap();
-            let mut ret = false;
-            for event in &*list {
+            let mut list = self.event_list.lock().unwrap();
+            while let Some(event) = list.pop() {
                 match event {
                     SDL_Event::User(event) => match event {
                         MainEvent::RenderOpFinish(op) => {
                             let temp = op.read().unwrap();
                             let op_ref = temp.as_ref();
                             if op_ref as *const dyn RenderOp == self as &dyn RenderOp {
-                                ret |= true;
-                            } else {
-                                ret |= false;
+                                return true;
                             }
                         }
-                        _ => ret |= false,
+                        _ => (),
                     },
-                    _ => ret |= false,
+                    _ => (),
                 }
             }
-            ret
+            false
         }
         fn set_open(&mut self, state: bool) {
             self.open = state;

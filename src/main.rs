@@ -12,7 +12,7 @@ use std::thread;
 use std::time::Instant;
 use windows::WindowBuilder;
 
-const MAIN_WIDTH: usize = 800;
+const MAIN_WIDTH: usize = 600;
 const MAIN_HEIGHT: usize = 600;
 
 pub fn main() -> Result<(), String> {
@@ -21,7 +21,6 @@ pub fn main() -> Result<(), String> {
     let video_subsystem = sdl_context.video().unwrap();
     let event_system = sdl_context.event().unwrap();
     event_system.register_custom_event::<MainEvent>().unwrap();
-
     // Call Main Window Init from windows.rs
     let main_window = Arc::new(Mutex::new(
         WindowBuilder::new(
@@ -35,18 +34,17 @@ pub fn main() -> Result<(), String> {
         .build()?,
     ));
 
-    // Start rendering thread
-    let (ttx, rx) = mpsc::channel();
-    let (tx, trx) = mpsc::channel();
-    let rendering_transmitter = event_system.event_sender();
-    let main_thread = thread::spawn(move || main_loop(rendering_transmitter, trx));
-
     // Init rendering ops
     let main_op = drawing::Mandelbrot::init(main_window.clone());
 
+    // Start rendering thread
+    let (tx, rx) = mpsc::channel();
+    let rendering_transmitter = event_system.event_sender();
+    let main_thread = thread::spawn(move || main_loop(rendering_transmitter, rx));
+
     // Init event watcher
-    let _event_watcher =
-        events::EventWatcher::init(&event_system, ttx, vec![main_window], vec![main_op.clone()]);
+    let mut event_handler =
+        events::EventHandler::init(&sdl_context, vec![main_window], vec![main_op.clone()])?;
 
     // Send rendering ops
     tx.send(ThreadMessage::Op(main_op.clone())).unwrap();
@@ -56,7 +54,8 @@ pub fn main() -> Result<(), String> {
     let mut now = Instant::now();
     loop {
         // Handle Events
-        for event in rx.iter() {
+        let events = event_handler.handle_events();
+        for event in events {
             match event {
                 MainEvent::Quit(result) => {
                     tx.send(ThreadMessage::Quit).unwrap();
@@ -72,10 +71,7 @@ pub fn main() -> Result<(), String> {
                     let mut window_mut = window.lock().unwrap();
                     window_mut.present(op.get_pixels(), *op.get_rect());
                     // Framerate
-                    let time_elapsed = Instant::elapsed(&now).as_micros();
-                    now = Instant::now();
-                    let fr = 1_000_000 / time_elapsed;
-                    println!("Framerate: {}", fr);
+                    print_framerate(&mut now);
                 }
                 MainEvent::RenderOpStart(op) => {
                     tx.send(ThreadMessage::Op(op)).unwrap();
@@ -83,4 +79,16 @@ pub fn main() -> Result<(), String> {
             }
         }
     }
+}
+
+fn print_framerate(instant: &mut Instant) {
+    let time_elapsed = Instant::elapsed(&instant).as_micros();
+    *instant = Instant::now();
+    let fr;
+    if time_elapsed == 0 {
+        fr = u128::MAX;
+    } else {
+        fr = 1_000_000 / time_elapsed;
+    }
+    println!("Framerate: {}", fr);
 }

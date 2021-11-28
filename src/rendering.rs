@@ -42,15 +42,17 @@ mod render_backend {
         use super::threading::{end_threads, start_threads};
         use super::ThreadMessage;
         use crate::events::MainEvent;
+        use crate::print_framerate;
         use sdl2::event::EventSender;
         use std::sync::mpsc::Receiver;
+        use std::time::Instant;
 
         pub fn main_loop(
             sender: EventSender,
             receiver: Receiver<ThreadMessage>,
         ) -> Result<(), String> {
             // Initialize all variables
-            let cores = 2; //num_cpus::get() * 2;
+            let cores = num_cpus::get() * 2;
             let (handles, senders, receivers) = start_threads(cores)?;
             // Start main loop
             'main: loop {
@@ -75,16 +77,14 @@ mod render_backend {
                             let mut op_mut = op.write().unwrap();
                             // Allow drawing logic to modify data
                             op_mut.modify_data();
-                        }
-                        // Set op to open
-                        {
-                            let mut op_mut = op.write().unwrap();
+                            // Set op to open
                             op_mut.set_open(true);
                         }
                         // Let main thread know we're done
                         sender
                             .push_custom_event(MainEvent::RenderOpFinish(op.clone()))
                             .unwrap();
+                        //
                     }
                     Ok(ThreadMessage::Quit) => {
                         break 'main;
@@ -146,6 +146,7 @@ mod render_backend {
     pub mod drawing {
         use super::{RenderOp, RenderOpReference};
         use std::sync::mpsc::{Receiver, Sender};
+        use std::sync::{Arc, RwLock};
 
         pub fn draw_loop(
             sender: Sender<()>,
@@ -158,16 +159,15 @@ mod render_backend {
                 // Get slice
                 let (slice, ind, pitch) = op.get_slice(id, thread_count);
                 // Modify pixels
-                draw_func(&op, slice, ind, pitch);
+                draw_func(op.as_ref(), slice, ind, pitch);
                 // Release read and let main thread know
                 drop(op);
                 sender.send(()).unwrap();
             }
         }
 
-        #[allow(clippy::borrowed_box)]
         fn draw_func(
-            op: &Box<dyn RenderOp + Send>,
+            op: &(dyn RenderOp + Send),
             slice: &mut [(u8, u8, u8, u8)],
             ind: usize,
             pitch: usize,
@@ -239,7 +239,7 @@ mod render_backend {
                 }
                 (
                     from_raw_parts_mut(ptr as *mut (u8, u8, u8, u8), len / 4),
-                    offset * ind,
+                    (offset * ind / 4),
                 )
             }
         }
