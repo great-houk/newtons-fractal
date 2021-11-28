@@ -1,11 +1,10 @@
 pub use mandelbrot::Mandelbrot;
 
 mod mandelbrot {
-    use crate::events::{MainEvent, SDL_Event};
+    use crate::events::{MainEvent, SdlEvent};
     use crate::rendering::{Pixel, Pixels, RenderOp, RenderOpReference};
     use crate::windows::Window;
     use crate::{MAIN_HEIGHT, MAIN_WIDTH};
-    use sdl2::event::Event;
     use sdl2::rect::Rect;
     use std::sync::{Arc, Mutex, RwLock};
     struct Data {
@@ -27,7 +26,7 @@ mod mandelbrot {
         rect: Rect,
         pixels: Pixels,
         data: Data,
-        event_list: Mutex<Vec<SDL_Event>>,
+        event_list: Mutex<Vec<SdlEvent>>,
         open: bool,
     }
 
@@ -222,7 +221,7 @@ mod mandelbrot {
             *y_ratio = yr;
             *y_offset = yo;
         }
-        fn push_event(&self, event: SDL_Event) {
+        fn push_event(&self, event: SdlEvent) {
             let mut list = self.event_list.lock().unwrap();
             list.push(event);
         }
@@ -230,7 +229,7 @@ mod mandelbrot {
             let mut list = self.event_list.lock().unwrap();
             while let Some(event) = list.pop() {
                 match event {
-                    SDL_Event::User(event) => match event {
+                    SdlEvent::User(event) => match event {
                         MainEvent::RenderOpFinish(op) => {
                             let temp = op.read().unwrap();
                             let op_ref = temp.as_ref();

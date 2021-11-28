@@ -4,10 +4,9 @@ pub use render_backend::{
 };
 
 mod render_backend {
-    use crate::events::SDL_Event;
+    use crate::events::SdlEvent;
     use crate::windows::Window;
     use pixels::Pixels;
-    use sdl2::event::Event;
     use sdl2::rect::Rect;
     use std::sync::{Arc, Mutex, RwLock};
     pub type Pixel = (u8, u8, u8, u8);
@@ -28,7 +27,7 @@ mod render_backend {
         fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
         fn modify_data(&mut self);
         fn handle_events(&self) -> bool;
-        fn push_event(&self, event: SDL_Event);
+        fn push_event(&self, event: SdlEvent);
         fn set_open(&mut self, state: bool);
         fn get_open(&self) -> bool;
     }
@@ -42,10 +41,8 @@ mod render_backend {
         use super::threading::{end_threads, start_threads};
         use super::ThreadMessage;
         use crate::events::MainEvent;
-        use crate::print_framerate;
         use sdl2::event::EventSender;
         use std::sync::mpsc::Receiver;
-        use std::time::Instant;
 
         pub fn main_loop(
             sender: EventSender,
@@ -146,7 +143,6 @@ mod render_backend {
     pub mod drawing {
         use super::{RenderOp, RenderOpReference};
         use std::sync::mpsc::{Receiver, Sender};
-        use std::sync::{Arc, RwLock};
 
         pub fn draw_loop(
             sender: Sender<()>,
