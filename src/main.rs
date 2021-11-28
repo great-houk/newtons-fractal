@@ -82,7 +82,7 @@ pub fn main() -> Result<(), String> {
 }
 
 fn print_framerate(instant: &mut Instant) {
-    let time_elapsed = Instant::elapsed(&instant).as_micros();
+    let time_elapsed = Instant::elapsed(instant).as_micros();
     *instant = Instant::now();
     let fr;
     if time_elapsed == 0 {

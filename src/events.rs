@@ -14,7 +14,7 @@ pub enum MainEvent {
 }
 
 #[derive(Clone)]
-pub enum SDL_Event {
+pub enum SdlEvent {
     Event(Event),
     User(MainEvent),
 }
@@ -52,7 +52,7 @@ impl EventHandler {
         let event = Self::transform_event(event);
         // Handle events
         match &event {
-            SDL_Event::Event(event) => match event {
+            SdlEvent::Event(event) => match event {
                 // If sdl2 wants to quite or escape is pressed,
                 // Then quit
                 Event::Quit { .. }
@@ -85,12 +85,11 @@ impl EventHandler {
                 // Default, do nothing
                 _ => (),
             },
-            SDL_Event::User(event) => match event {
-                MainEvent::RenderOpFinish(op) => {
+            SdlEvent::User(event) => {
+                if let MainEvent::RenderOpFinish(op) = event {
                     ret.push(MainEvent::RenderOpFinish(op.clone()));
                 }
-                _ => (),
-            },
+            }
         }
         // Send events to ops and tell them to handle
         // if applicable
@@ -107,10 +106,10 @@ impl EventHandler {
         ret
     }
 
-    fn transform_event(event: Event) -> SDL_Event {
+    fn transform_event(event: Event) -> SdlEvent {
         match event {
-            Event::User { .. } => SDL_Event::User(event.as_user_event_type::<MainEvent>().unwrap()),
-            _ => SDL_Event::Event(event),
+            Event::User { .. } => SdlEvent::User(event.as_user_event_type::<MainEvent>().unwrap()),
+            _ => SdlEvent::Event(event),
         }
     }
 }
