@@ -115,13 +115,13 @@ mod mandelbrot {
             &self.rect
         }
         fn get_present_buffer(&self) -> &Pixels {
-            &self.buffers[2 % (self.buffer_ind + 1)]
+            &self.buffers[(self.buffer_ind + 1) % 2]
         }
         fn get_draw_buffer(&self) -> &Pixels {
             &self.buffers[self.buffer_ind]
         }
         fn swap_buffers(&mut self) {
-            self.buffer_ind = 2 % (self.buffer_ind + 1);
+            self.buffer_ind = (self.buffer_ind + 1) % 2;
         }
         fn draw_pixel(&self, pixel_x: usize, pixel_y: usize) -> Pixel {
             let Data {
@@ -138,7 +138,7 @@ mod mandelbrot {
             let mut y_coord = 0.;
             let mut iteration = 0;
             let it_mod;
-            const MAX_ITERATION: usize = 1 << 8;
+            const MAX_ITERATION: usize = 1 << 10;
             // Here N = 2^8 is chosen as a reasonable bailout radius.
 
             while x_coord * x_coord + y_coord * y_coord <= (1 << 16) as f64

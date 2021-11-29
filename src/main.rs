@@ -12,8 +12,8 @@ use std::thread;
 use std::time::Instant;
 use windows::WindowBuilder;
 
-const MAIN_WIDTH: usize = 600;
-const MAIN_HEIGHT: usize = 600;
+const MAIN_WIDTH: usize = 400;
+const MAIN_HEIGHT: usize = 400;
 
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
