@@ -138,7 +138,7 @@ mod mandelbrot {
             let mut y_coord = 0.;
             let mut iteration = 0;
             let it_mod;
-            const MAX_ITERATION: usize = 1 << 10;
+            const MAX_ITERATION: usize = 1 << 8;
             // Here N = 2^8 is chosen as a reasonable bailout radius.
 
             while x_coord * x_coord + y_coord * y_coord <= (1 << 16) as f64
@@ -215,7 +215,7 @@ mod mandelbrot {
                 ref mut height,
             } = &mut self.data;
             //
-            let scale = 1.00;
+            let scale = 1.02;
             *window_width /= scale;
             *window_height /= scale;
             // Calculate useful numbers from those

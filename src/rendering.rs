@@ -50,7 +50,7 @@ mod render_backend {
             receiver: Receiver<ThreadMessage>,
         ) -> Result<(), String> {
             // Initialize all variables
-            let cores = 1; //num_cpus::get() * 2;
+            let cores = num_cpus::get() * 2;
             let (handles, senders, receivers) = start_threads(cores)?;
             // Start main loop
             'main: loop {
