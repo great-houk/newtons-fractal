@@ -56,6 +56,7 @@ pub fn main() -> Result<(), String> {
         // Handle Events
         let events = event_handler.handle_events();
         for event in events {
+            // println!("Event: {}", event);
             match event {
                 MainEvent::Quit(result) => {
                     tx.send(ThreadMessage::Quit).unwrap();
@@ -69,9 +70,9 @@ pub fn main() -> Result<(), String> {
                     let op = op.read().unwrap();
                     let window = op.get_window();
                     let mut window_mut = window.lock().unwrap();
-                    window_mut.present(op.get_pixels(), *op.get_rect());
+                    window_mut.present(op.get_present_buffer(), *op.get_rect());
                     // Framerate
-                    print_framerate(&mut now);
+                    println_framerate(&mut now);
                 }
                 MainEvent::RenderOpStart(op) => {
                     tx.send(ThreadMessage::Op(op)).unwrap();
@@ -81,7 +82,7 @@ pub fn main() -> Result<(), String> {
     }
 }
 
-fn print_framerate(instant: &mut Instant) {
+fn println_framerate(instant: &mut Instant) {
     let time_elapsed = Instant::elapsed(instant).as_micros();
     *instant = Instant::now();
     let fr;

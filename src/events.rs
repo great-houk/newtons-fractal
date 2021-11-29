@@ -1,4 +1,4 @@
-use crate::rendering::RenderOpReference;
+use crate::rendering::{ RenderOpReference};
 use crate::windows::Window;
 use sdl2::event::{Event, WindowEvent};
 use sdl2::keyboard::Keycode;
@@ -11,6 +11,22 @@ pub enum MainEvent {
     Quit(Result<(), String>),
     RenderOpStart(RenderOpReference),
     RenderOpFinish(RenderOpReference),
+}
+
+impl std::fmt::Display for MainEvent {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match &self {
+            Self::Quit(_) => {
+                write!(f, "MainEvent::Quit")
+            }
+            Self::RenderOpStart(_) => {
+                write!(f, "MainEvent::RenderOpStart")
+            }
+            Self::RenderOpFinish(_) => {
+                write!(f, "MainEvent::RenderOpFinish")
+            }
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -50,6 +66,18 @@ impl EventHandler {
         // Change event into sdl_event b/c as_user_event_type
         // can only be done once.
         let event = Self::transform_event(event);
+        // Send events to ops and tell them to handle
+        // if applicable
+        for op_ref in &self.render_ops {
+            let op = op_ref.read().unwrap();
+            op.push_event(event.clone());
+            if op.get_open() {
+                let should_start = op.handle_events();
+                if should_start {
+                    ret.push(MainEvent::RenderOpStart(op_ref.clone()));
+                }
+            }
+        }
         // Handle events
         match &event {
             SdlEvent::Event(event) => match event {
@@ -88,18 +116,6 @@ impl EventHandler {
             SdlEvent::User(event) => {
                 if let MainEvent::RenderOpFinish(op) = event {
                     ret.push(MainEvent::RenderOpFinish(op.clone()));
-                }
-            }
-        }
-        // Send events to ops and tell them to handle
-        // if applicable
-        for op_ref in &self.render_ops {
-            let op = op_ref.read().unwrap();
-            op.push_event(event.clone());
-            if op.get_open() {
-                let should_start = op.handle_events();
-                if should_start {
-                    ret.push(MainEvent::RenderOpStart(op_ref.clone()));
                 }
             }
         }

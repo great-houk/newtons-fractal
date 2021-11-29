@@ -16,10 +16,11 @@ mod render_backend {
     pub trait RenderOp: Sync {
         fn get_window(&self) -> Arc<Mutex<Window>>;
         fn get_rect(&self) -> &Rect;
-        fn get_pixels(&self) -> &Pixels;
-        fn get_pixels_mut(&mut self) -> &mut Pixels;
+        fn get_present_buffer(&self) -> &Pixels;
+        fn get_draw_buffer(&self) -> &Pixels;
+        fn swap_buffers(&mut self);
         fn get_slice<'a>(&self, ind: usize, max: usize) -> PixelSlice<'a> {
-            let pixels = self.get_pixels();
+            let pixels = self.get_draw_buffer();
             let (slice, ind) = unsafe { pixels.get_slice(ind, max) };
             let pitch = pixels.dimensions().0;
             (slice, ind, pitch)
@@ -28,7 +29,7 @@ mod render_backend {
         fn modify_data(&mut self);
         fn handle_events(&self) -> bool;
         fn push_event(&self, event: SdlEvent);
-        fn set_open(&mut self, state: bool);
+        fn set_open(&self, state: bool);
         fn get_open(&self) -> bool;
     }
 
@@ -49,7 +50,7 @@ mod render_backend {
             receiver: Receiver<ThreadMessage>,
         ) -> Result<(), String> {
             // Initialize all variables
-            let cores = num_cpus::get() * 2;
+            let cores = 1; //num_cpus::get() * 2;
             let (handles, senders, receivers) = start_threads(cores)?;
             // Start main loop
             'main: loop {
@@ -58,8 +59,8 @@ mod render_backend {
                     Ok(ThreadMessage::Op(op)) => {
                         // Set op as closed
                         {
-                            let mut op_mut = op.write().unwrap();
-                            op_mut.set_open(false);
+                            let op_read = op.read().unwrap();
+                            op_read.set_open(false);
                         }
                         // Start Render
                         for sender in &senders {
@@ -74,6 +75,8 @@ mod render_backend {
                             let mut op_mut = op.write().unwrap();
                             // Allow drawing logic to modify data
                             op_mut.modify_data();
+                            // Swap the buffers
+                            op_mut.swap_buffers();
                             // Set op to open
                             op_mut.set_open(true);
                         }
@@ -81,7 +84,6 @@ mod render_backend {
                         sender
                             .push_custom_event(MainEvent::RenderOpFinish(op.clone()))
                             .unwrap();
-                        //
                     }
                     Ok(ThreadMessage::Quit) => {
                         break 'main;

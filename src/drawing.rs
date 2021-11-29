@@ -6,7 +6,10 @@ mod mandelbrot {
     use crate::windows::Window;
     use crate::{MAIN_HEIGHT, MAIN_WIDTH};
     use sdl2::rect::Rect;
-    use std::sync::{Arc, Mutex, RwLock};
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+    };
     struct Data {
         x_ratio: f64,
         x_offset: f64,
@@ -24,25 +27,30 @@ mod mandelbrot {
     pub struct Mandelbrot {
         window: Arc<Mutex<Window>>,
         rect: Rect,
-        pixels: Pixels,
+        buffers: [Pixels; 2],
+        buffer_ind: usize,
         data: Data,
         event_list: Mutex<Vec<SdlEvent>>,
-        open: bool,
+        open: AtomicBool,
     }
 
     impl Mandelbrot {
         pub fn init(window: Arc<Mutex<Window>>) -> RenderOpReference {
             let rect = Rect::new(0, 0, MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
-            let pixels = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
+            let buffer1 = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
+            let buffer2 = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
+            let buffers = [buffer1, buffer2];
+            let buffer_ind = 0;
             let data = Self::init_data(MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
             let event_list = Mutex::new(vec![]);
             Arc::new(RwLock::new(Box::new(Mandelbrot {
                 window,
                 rect,
-                pixels,
+                buffers,
+                buffer_ind,
                 data,
                 event_list,
-                open: true,
+                open: AtomicBool::new(true),
             })))
         }
 
@@ -106,11 +114,14 @@ mod mandelbrot {
         fn get_rect(&self) -> &Rect {
             &self.rect
         }
-        fn get_pixels(&self) -> &Pixels {
-            &self.pixels
+        fn get_present_buffer(&self) -> &Pixels {
+            &self.buffers[2 % (self.buffer_ind + 1)]
         }
-        fn get_pixels_mut(&mut self) -> &mut Pixels {
-            &mut self.pixels
+        fn get_draw_buffer(&self) -> &Pixels {
+            &self.buffers[self.buffer_ind]
+        }
+        fn swap_buffers(&mut self) {
+            self.buffer_ind = 2 % (self.buffer_ind + 1);
         }
         fn draw_pixel(&self, pixel_x: usize, pixel_y: usize) -> Pixel {
             let Data {
@@ -155,7 +166,7 @@ mod mandelbrot {
             }
             // Color choosing
             let (r, g, b) = {
-                const PALETTE: [(u8, u8, u8); 16] = [
+                static PALETTE: [(u8, u8, u8); 16] = [
                     (66, 30, 15),
                     (25, 7, 26),
                     (9, 1, 47),
@@ -204,7 +215,7 @@ mod mandelbrot {
                 ref mut height,
             } = &mut self.data;
             //
-            let scale = 1.02;
+            let scale = 1.00;
             *window_width /= scale;
             *window_height /= scale;
             // Calculate useful numbers from those
@@ -244,11 +255,11 @@ mod mandelbrot {
             }
             false
         }
-        fn set_open(&mut self, state: bool) {
-            self.open = state;
+        fn set_open(&self, state: bool) {
+            self.open.store(state, Ordering::Relaxed);
         }
         fn get_open(&self) -> bool {
-            self.open
+            self.open.load(Ordering::Relaxed)
         }
     }
 }
