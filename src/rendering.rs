@@ -144,7 +144,9 @@ mod render_backend {
 
     pub mod drawing {
         use super::{RenderOp, RenderOpReference};
+        use crate::print_micro;
         use std::sync::mpsc::{Receiver, Sender};
+        use std::time::Instant;
 
         pub fn draw_loop(
             sender: Sender<()>,

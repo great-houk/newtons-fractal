@@ -12,8 +12,8 @@ use std::thread;
 use std::time::Instant;
 use windows::WindowBuilder;
 
-const MAIN_WIDTH: usize = 400;
-const MAIN_HEIGHT: usize = 400;
+const MAIN_WIDTH: usize = 600;
+const MAIN_HEIGHT: usize = 600;
 
 pub fn main() -> Result<(), String> {
     // Call setup functions for sdl2
@@ -92,4 +92,10 @@ fn println_framerate(instant: &mut Instant) {
         fr = 1_000_000 / time_elapsed;
     }
     println!("Framerate: {}", fr);
+}
+
+fn print_micro(now: &mut Instant) {
+    let time_elapsed = Instant::elapsed(now).as_micros();
+    *now = Instant::now();
+    print!("{} ", time_elapsed);
 }

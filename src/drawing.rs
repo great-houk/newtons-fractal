@@ -56,7 +56,7 @@ mod mandelbrot {
 
         fn init_data(width: u32, height: u32) -> Data {
             // Basic numbers
-            let window_height = 3.;
+            let window_height = 5.;
             let window_width = window_height * (width as f64 / height as f64);
             // 0.001643721971153 − 0.822467633298876i
             // -0.761574 - 0.0847596i
