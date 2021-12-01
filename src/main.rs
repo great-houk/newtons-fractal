@@ -31,6 +31,7 @@ pub fn main() -> Result<(), String> {
             |a, b| (a, b),
         )
         .set_position(WindowPos::Centered, WindowPos::Centered)
+        .set_resizable(true)
         .build()?,
     ));
 
@@ -72,7 +73,7 @@ pub fn main() -> Result<(), String> {
                     let mut window_mut = window.lock().unwrap();
                     window_mut.present(op.get_present_buffer(), *op.get_rect());
                     // Framerate
-                    println_framerate(&mut now);
+                    // println_framerate(&mut now);
                 }
                 MainEvent::RenderOpStart(op) => {
                     tx.send(ThreadMessage::Op(op)).unwrap();
@@ -92,10 +93,4 @@ fn println_framerate(instant: &mut Instant) {
         fr = 1_000_000 / time_elapsed;
     }
     println!("Framerate: {}", fr);
-}
-
-fn print_micro(now: &mut Instant) {
-    let time_elapsed = Instant::elapsed(now).as_micros();
-    *now = Instant::now();
-    print!("{} ", time_elapsed);
 }

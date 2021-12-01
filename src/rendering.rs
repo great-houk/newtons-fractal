@@ -27,7 +27,7 @@ mod render_backend {
         }
         fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
         fn modify_data(&mut self);
-        fn handle_events(&self) -> bool;
+        fn handle_events(&mut self) -> bool;
         fn push_event(&self, event: SdlEvent);
         fn set_open(&self, state: bool);
         fn get_open(&self) -> bool;
@@ -144,9 +144,7 @@ mod render_backend {
 
     pub mod drawing {
         use super::{RenderOp, RenderOpReference};
-        use crate::print_micro;
         use std::sync::mpsc::{Receiver, Sender};
-        use std::time::Instant;
 
         pub fn draw_loop(
             sender: Sender<()>,

@@ -236,24 +236,48 @@ mod mandelbrot {
             let mut list = self.event_list.lock().unwrap();
             list.push(event);
         }
-        fn handle_events(&self) -> bool {
+        fn handle_events(&mut self) -> bool {
+            use sdl2::event::{Event, WindowEvent};
+
             let mut list = self.event_list.lock().unwrap();
+            let mut ret = false;
             while let Some(event) = list.pop() {
+                println!("{:?}", event);
                 match event {
-                    SdlEvent::User(event) => match event {
-                        MainEvent::RenderOpFinish(op) => {
-                            let temp = op.read().unwrap();
-                            let op_ref = temp.as_ref();
-                            if op_ref as *const dyn RenderOp == self as &dyn RenderOp {
-                                return true;
-                            }
+                    SdlEvent::User(MainEvent::RenderOpFinish(op)) => {
+                        // If we can't read the op, then it must be this
+                        if let Err(_) = op.try_read() {
+                            ret = true;
                         }
-                        _ => (),
-                    },
+                    }
+                    SdlEvent::Event(Event::Window {
+                        win_event: WindowEvent::Resized(wid, hei),
+                        ..
+                    }) => {
+                        println!("!!!!!!!!!!  WIDTH: {} HEIGHT: {}", wid, hei);
+                        self.rect = Rect::new(0, 0, wid as u32, hei as u32);
+                        let buffer1 = Pixels::new(wid as usize, hei as usize).unwrap();
+                        let buffer2 = Pixels::new(wid as usize, hei as usize).unwrap();
+                        self.buffers = [buffer1, buffer2];
+                        self.buffer_ind = 0;
+
+                        let (xr, xo, yr, yo) = Self::get_mandelbrot_vals(
+                            self.data.window_width,
+                            self.data.width,
+                            self.data.window_x,
+                            self.data.window_height,
+                            self.data.height,
+                            self.data.window_y,
+                        );
+                        self.data.x_ratio = xr;
+                        self.data.x_offset = xo;
+                        self.data.y_ratio = yr;
+                        self.data.y_offset = yo;
+                    }
                     _ => (),
                 }
             }
-            false
+            ret
         }
         fn set_open(&self, state: bool) {
             self.open.store(state, Ordering::Relaxed);
