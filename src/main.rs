@@ -73,7 +73,7 @@ pub fn main() -> Result<(), String> {
                     let mut window_mut = window.lock().unwrap();
                     window_mut.present(op.get_present_buffer(), *op.get_rect());
                     // Framerate
-                    // println_framerate(&mut now);
+                    println_framerate(&mut now);
                 }
                 MainEvent::RenderOpStart(op) => {
                     tx.send(ThreadMessage::Op(op)).unwrap();

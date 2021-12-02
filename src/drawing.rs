@@ -268,10 +268,12 @@ mod mandelbrot {
             let mut list = self.event_list.lock().unwrap();
             let mut ret = false;
             while let Some(event) = list.pop() {
-                println!("{:?}", event);
+                // println!("{:?}", event);
                 match event {
                     SdlEvent::User(MainEvent::RenderOpFinish(op)) => {
                         // If we can't read the op, then it must be this
+                        // so we finished, and there's no reason to not
+                        // restart, so send true back
                         if let Err(_) = op.try_read() {
                             ret = true;
                         }
@@ -280,12 +282,16 @@ mod mandelbrot {
                         win_event: WindowEvent::Resized(wid, hei),
                         ..
                     }) => {
-                        println!("!!!!!!!!!!  WIDTH: {} HEIGHT: {}", wid, hei);
                         self.rect = Rect::new(0, 0, wid as u32, hei as u32);
                         let buffer1 = Pixels::new(wid as usize, hei as usize).unwrap();
                         let buffer2 = Pixels::new(wid as usize, hei as usize).unwrap();
                         self.buffers = [buffer1, buffer2];
                         self.buffer_ind = 0;
+
+                        self.data.window_width *= wid as f64 / self.data.width as f64;
+                        self.data.window_height *= hei as f64 / self.data.height as f64;
+                        self.data.width = wid as u32;
+                        self.data.height = hei as u32;
 
                         let (xr, xo, yr, yo) = Self::get_mandelbrot_vals(
                             self.data.window_width,
