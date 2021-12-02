@@ -34,7 +34,7 @@ mod render_backend {
     }
 
     pub enum ThreadMessage {
-        Op(RenderOpReference),
+        StartOp(RenderOpReference),
         Quit,
     }
 
@@ -56,7 +56,7 @@ mod render_backend {
             'main: loop {
                 // Wait for the window to give up control on the textures
                 match receiver.recv() {
-                    Ok(ThreadMessage::Op(op)) => {
+                    Ok(ThreadMessage::StartOp(op)) => {
                         // Set op as closed
                         {
                             let op_read = op.read().unwrap();

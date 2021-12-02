@@ -1,41 +1,108 @@
 pub use mandelbrot::Mandelbrot;
 
 mod basic_render_op {
-    use crate::events::{MainEvent, SdlEvent};
-    use crate::rendering::{Pixel, Pixels, RenderOp, RenderOpReference};
+    use crate::events::SdlEvent;
+    use crate::rendering::{Pixel, Pixels, RenderOp};
     use crate::windows::Window;
-    use crate::{MAIN_HEIGHT, MAIN_WIDTH};
     use sdl2::rect::Rect;
     use std::sync::{
         atomic::{AtomicBool, Ordering},
-        Arc, Mutex, RwLock,
+        Arc, Mutex,
     };
 
-    pub trait BasicOpImp {}
-
-    pub struct BasicOp<T> {
-        window: Arc<Mutex<Window>>,
-        rect: Rect,
-        buffers: [Pixels; 2],
-        buffer_ind: usize,
-        event_list: Mutex<Vec<SdlEvent>>,
-        open: AtomicBool,
-        data: T,
+    pub trait BasicOpImp: Send + Sync {
+        fn get_op(&self) -> &BasicOp;
+        fn get_op_mut(&mut self) -> &mut BasicOp;
+        fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
+        fn modify_data(&mut self);
+        fn handle_events(&mut self) -> bool;
     }
 
-    impl 
+    pub struct BasicOp {
+        pub window: Arc<Mutex<Window>>,
+        pub rect: Rect,
+        pub buffers: [Pixels; 2],
+        pub buffer_ind: usize,
+        pub event_list: Mutex<Vec<SdlEvent>>,
+        pub open: AtomicBool,
+    }
+
+    impl BasicOp {
+        pub fn init(
+            window: Arc<Mutex<Window>>,
+            width: usize,
+            height: usize,
+            x: isize,
+            y: isize,
+        ) -> Self {
+            let rect = Rect::new(x as i32, y as i32, width as u32, height as u32);
+            let buffer1 = Pixels::new(width, height).unwrap();
+            let buffer2 = Pixels::new(width, height).unwrap();
+            let buffers = [buffer1, buffer2];
+            let buffer_ind = 0;
+            let event_list = Mutex::new(vec![]);
+            BasicOp {
+                window,
+                rect,
+                buffers,
+                buffer_ind,
+                event_list,
+                open: AtomicBool::new(true),
+            }
+        }
+    }
+
+    impl<T: BasicOpImp> RenderOp for T {
+        fn get_window(&self) -> Arc<Mutex<Window>> {
+            self.get_op().window.clone()
+        }
+        fn get_rect(&self) -> &Rect {
+            &self.get_op().rect
+        }
+        fn get_present_buffer(&self) -> &Pixels {
+            let s = self.get_op();
+            &s.buffers[(s.buffer_ind + 1) % 2]
+        }
+        fn get_draw_buffer(&self) -> &Pixels {
+            let s = self.get_op();
+            &s.buffers[s.buffer_ind]
+        }
+        fn swap_buffers(&mut self) {
+            self.get_op_mut().buffer_ind += 1;
+            self.get_op_mut().buffer_ind %= 2;
+        }
+        fn draw_pixel(&self, x: usize, y: usize) -> Pixel {
+            self.draw_pixel(x, y)
+        }
+        fn modify_data(&mut self) {
+            self.modify_data();
+        }
+        fn handle_events(&mut self) -> bool {
+            self.handle_events()
+        }
+        fn push_event(&self, event: SdlEvent) {
+            let mut list = self.get_op().event_list.lock().unwrap();
+            list.push(event);
+        }
+        fn set_open(&self, state: bool) {
+            let s = self.get_op();
+            s.open.store(state, Ordering::Relaxed);
+        }
+        fn get_open(&self) -> bool {
+            let s = self.get_op();
+            s.open.load(Ordering::Relaxed)
+        }
+    }
 }
 
 mod mandelbrot {
+    use super::basic_render_op::{BasicOp, BasicOpImp};
     use crate::events::{MainEvent, SdlEvent};
-    use crate::rendering::{Pixel, Pixels, RenderOp, RenderOpReference};
+    use crate::rendering::{Pixel, Pixels, RenderOpReference};
     use crate::windows::Window;
     use crate::{MAIN_HEIGHT, MAIN_WIDTH};
     use sdl2::rect::Rect;
-    use std::sync::{
-        atomic::{AtomicBool, Ordering},
-        Arc, Mutex, RwLock,
-    };
+    use std::sync::{Arc, Mutex, RwLock};
     struct Data {
         x_ratio: f64,
         x_offset: f64,
@@ -51,33 +118,15 @@ mod mandelbrot {
     }
 
     pub struct Mandelbrot {
-        window: Arc<Mutex<Window>>,
-        rect: Rect,
-        buffers: [Pixels; 2],
-        buffer_ind: usize,
         data: Data,
-        event_list: Mutex<Vec<SdlEvent>>,
-        open: AtomicBool,
+        op: BasicOp,
     }
 
     impl Mandelbrot {
         pub fn init(window: Arc<Mutex<Window>>) -> RenderOpReference {
-            let rect = Rect::new(0, 0, MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
-            let buffer1 = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
-            let buffer2 = Pixels::new(MAIN_WIDTH, MAIN_HEIGHT).unwrap();
-            let buffers = [buffer1, buffer2];
-            let buffer_ind = 0;
             let data = Self::init_data(MAIN_WIDTH as u32, MAIN_HEIGHT as u32);
-            let event_list = Mutex::new(vec![]);
-            Arc::new(RwLock::new(Box::new(Mandelbrot {
-                window,
-                rect,
-                buffers,
-                buffer_ind,
-                data,
-                event_list,
-                open: AtomicBool::new(true),
-            })))
+            let op = BasicOp::init(window, MAIN_WIDTH, MAIN_HEIGHT, 0, 0);
+            Arc::new(RwLock::new(Box::new(Mandelbrot { data, op })))
         }
 
         fn init_data(width: u32, height: u32) -> Data {
@@ -133,21 +182,12 @@ mod mandelbrot {
         }
     }
 
-    impl RenderOp for Mandelbrot {
-        fn get_window(&self) -> Arc<Mutex<Window>> {
-            self.window.clone()
+    impl BasicOpImp for Mandelbrot {
+        fn get_op(&self) -> &BasicOp {
+            &self.op
         }
-        fn get_rect(&self) -> &Rect {
-            &self.rect
-        }
-        fn get_present_buffer(&self) -> &Pixels {
-            &self.buffers[(self.buffer_ind + 1) % 2]
-        }
-        fn get_draw_buffer(&self) -> &Pixels {
-            &self.buffers[self.buffer_ind]
-        }
-        fn swap_buffers(&mut self) {
-            self.buffer_ind = (self.buffer_ind + 1) % 2;
+        fn get_op_mut(&mut self) -> &mut BasicOp {
+            &mut self.op
         }
         fn draw_pixel(&self, pixel_x: usize, pixel_y: usize) -> Pixel {
             let Data {
@@ -258,16 +298,13 @@ mod mandelbrot {
             *y_ratio = yr;
             *y_offset = yo;
         }
-        fn push_event(&self, event: SdlEvent) {
-            let mut list = self.event_list.lock().unwrap();
-            list.push(event);
-        }
         fn handle_events(&mut self) -> bool {
             use sdl2::event::{Event, WindowEvent};
 
-            let mut list = self.event_list.lock().unwrap();
+            let s = self.get_op_mut();
+            let list = s.event_list.get_mut().unwrap().split_off(0);
             let mut ret = false;
-            while let Some(event) = list.pop() {
+            for event in list {
                 // println!("{:?}", event);
                 match event {
                     SdlEvent::User(MainEvent::RenderOpFinish(op)) => {
@@ -282,11 +319,12 @@ mod mandelbrot {
                         win_event: WindowEvent::Resized(wid, hei),
                         ..
                     }) => {
-                        self.rect = Rect::new(0, 0, wid as u32, hei as u32);
+                        let s = self.get_op_mut();
+                        s.rect = Rect::new(0, 0, wid as u32, hei as u32);
                         let buffer1 = Pixels::new(wid as usize, hei as usize).unwrap();
                         let buffer2 = Pixels::new(wid as usize, hei as usize).unwrap();
-                        self.buffers = [buffer1, buffer2];
-                        self.buffer_ind = 0;
+                        s.buffers = [buffer1, buffer2];
+                        s.buffer_ind = 0;
 
                         self.data.window_width *= wid as f64 / self.data.width as f64;
                         self.data.window_height *= hei as f64 / self.data.height as f64;
@@ -310,12 +348,6 @@ mod mandelbrot {
                 }
             }
             ret
-        }
-        fn set_open(&self, state: bool) {
-            self.open.store(state, Ordering::Relaxed);
-        }
-        fn get_open(&self) -> bool {
-            self.open.load(Ordering::Relaxed)
         }
     }
 }

@@ -48,7 +48,7 @@ pub fn main() -> Result<(), String> {
         events::EventHandler::init(&sdl_context, vec![main_window], vec![main_op.clone()])?;
 
     // Send rendering ops
-    tx.send(ThreadMessage::Op(main_op.clone())).unwrap();
+    tx.send(ThreadMessage::StartOp(main_op.clone())).unwrap();
 
     // Start the event loop, handle all events, and manage rendering ops's
     // status. Also, keep track of and print framerate.
@@ -76,7 +76,7 @@ pub fn main() -> Result<(), String> {
                     println_framerate(&mut now);
                 }
                 MainEvent::RenderOpStart(op) => {
-                    tx.send(ThreadMessage::Op(op)).unwrap();
+                    tx.send(ThreadMessage::StartOp(op)).unwrap();
                 }
             }
         }
