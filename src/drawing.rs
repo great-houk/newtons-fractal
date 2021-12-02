@@ -1,5 +1,31 @@
 pub use mandelbrot::Mandelbrot;
 
+mod basic_render_op {
+    use crate::events::{MainEvent, SdlEvent};
+    use crate::rendering::{Pixel, Pixels, RenderOp, RenderOpReference};
+    use crate::windows::Window;
+    use crate::{MAIN_HEIGHT, MAIN_WIDTH};
+    use sdl2::rect::Rect;
+    use std::sync::{
+        atomic::{AtomicBool, Ordering},
+        Arc, Mutex, RwLock,
+    };
+
+    pub trait BasicOpImp {}
+
+    pub struct BasicOp<T> {
+        window: Arc<Mutex<Window>>,
+        rect: Rect,
+        buffers: [Pixels; 2],
+        buffer_ind: usize,
+        event_list: Mutex<Vec<SdlEvent>>,
+        open: AtomicBool,
+        data: T,
+    }
+
+    impl 
+}
+
 mod mandelbrot {
     use crate::events::{MainEvent, SdlEvent};
     use crate::rendering::{Pixel, Pixels, RenderOp, RenderOpReference};
