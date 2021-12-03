@@ -180,6 +180,8 @@ mod mandelbrot {
             let y_offset = window_height / 2. - window_y;
             (x_ratio, x_offset, y_ratio, y_offset)
         }
+
+        
     }
 
     impl BasicOpImp for Mandelbrot {
@@ -326,23 +328,24 @@ mod mandelbrot {
                         s.buffers = [buffer1, buffer2];
                         s.buffer_ind = 0;
 
-                        self.data.window_width *= wid as f64 / self.data.width as f64;
-                        self.data.window_height *= hei as f64 / self.data.height as f64;
-                        self.data.width = wid as u32;
-                        self.data.height = hei as u32;
+                        let d = &mut self.data;
+                        d.window_width *= wid as f64 / d.width as f64;
+                        d.window_height *= hei as f64 / d.height as f64;
+                        d.width = wid as u32;
+                        d.height = hei as u32;
 
                         let (xr, xo, yr, yo) = Self::get_mandelbrot_vals(
-                            self.data.window_width,
-                            self.data.width,
-                            self.data.window_x,
-                            self.data.window_height,
-                            self.data.height,
-                            self.data.window_y,
+                            d.window_width,
+                            d.width,
+                            d.window_x,
+                            d.window_height,
+                            d.height,
+                            d.window_y,
                         );
-                        self.data.x_ratio = xr;
-                        self.data.x_offset = xo;
-                        self.data.y_ratio = yr;
-                        self.data.y_offset = yo;
+                        d.x_ratio = xr;
+                        d.x_offset = xo;
+                        d.y_ratio = yr;
+                        d.y_offset = yo;
                     }
                     _ => (),
                 }
