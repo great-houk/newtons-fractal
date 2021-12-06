@@ -1,144 +1,96 @@
 extern crate sdl2;
+mod drawing;
+mod events;
+mod rendering;
+mod windows;
 
-use sdl2::event::Event;
-use sdl2::keyboard::Keycode;
+use events::MainEvent;
+use rendering::{main_loop, ThreadMessage};
+use sdl2::video::WindowPos;
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 use std::time::Instant;
+use windows::WindowBuilder;
 
-const MAIN_WINDOW_SIZE: u32 = 500;
+const MAIN_WIDTH: usize = 600;
+const MAIN_HEIGHT: usize = 600;
 
 pub fn main() -> Result<(), String> {
-    let sdl_context = sdl2::init()?;
-    let video_subsystem = sdl_context.video()?;
-
-    let window = video_subsystem
-        .window("Newton's Fractal", MAIN_WINDOW_SIZE, MAIN_WINDOW_SIZE)
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let mut canvas = window
-        .into_canvas()
-        .present_vsync()
-        .build()
-        .map_err(|e| e.to_string())?;
-
-    let texture_creator = canvas.texture_creator();
-    let mut main_texture = texture_creator
-        .create_texture_target(
-            texture_creator.default_pixel_format(),
-            MAIN_WINDOW_SIZE,
-            MAIN_WINDOW_SIZE,
+    // Call setup functions for sdl2
+    let sdl_context = sdl2::init().unwrap();
+    let video_subsystem = sdl_context.video().unwrap();
+    let event_system = sdl_context.event().unwrap();
+    event_system.register_custom_event::<MainEvent>().unwrap();
+    // Call Main Window Init from windows.rs
+    let main_window = Arc::new(Mutex::new(
+        WindowBuilder::new(
+            &video_subsystem,
+            "➕Newton's Fractal➕",
+            MAIN_WIDTH as u32,
+            MAIN_HEIGHT as u32,
+            |a, b| (a, b),
         )
-        .unwrap_or_else(|error| panic!("Failed to make the main texture! {}", error));
-    let mut streaming_texture = texture_creator
-        .create_texture_streaming(
-            sdl2::pixels::PixelFormatEnum::ABGR8888,
-            MAIN_WINDOW_SIZE,
-            MAIN_WINDOW_SIZE,
-        )
-        .unwrap_or_else(|error| panic!("Failed to make the streaming texture! {}", error));
+        .set_position(WindowPos::Centered, WindowPos::Centered)
+        .set_resizable(true)
+        .build()?,
+    ));
 
-    let mut nframes = 0;
-    let mut event_pump = sdl_context.event_pump().map_err(|e| e.to_string())?;
-    'running: loop {
-        let now = Instant::now();
+    // Init rendering ops
+    let main_op = drawing::Mandelbrot::init(main_window.clone());
 
-        if !handle_events(&mut event_pump) {
-            break 'running;
-        }
+    // Start rendering thread
+    let (tx, rx) = mpsc::channel();
+    let rendering_transmitter = event_system.event_sender();
+    let main_thread = thread::spawn(move || main_loop(rendering_transmitter, rx));
 
-        // Run code
-        draw_spirals(
-            &mut canvas,
-            &mut main_texture,
-            &mut streaming_texture,
-            &mut nframes,
-        )?;
+    // Init event watcher
+    let mut event_handler =
+        events::EventHandler::init(&sdl_context, vec![main_window], vec![main_op.clone()])?;
 
-        // Present Canvas
-        canvas.present();
+    // Send rendering ops
+    tx.send(ThreadMessage::StartOp(main_op.clone())).unwrap();
 
-        let framerate = 1000000. / now.elapsed().as_micros() as f64;
-        println!("Framerate: {}", framerate);
-    }
-
-    Ok(())
-}
-
-fn handle_events(event_pump: &mut sdl2::EventPump) -> bool {
-    for event in event_pump.poll_iter() {
-        match event {
-            // If sdl2 wants to quite or escape is pressed,
-            // Then quit
-            Event::Quit { .. }
-            | Event::KeyDown {
-                keycode: Some(Keycode::Escape),
-                ..
-            } => return false,
-            // Default
-            _ => {}
-        }
-    }
-    true
-}
-
-fn draw_spirals(
-    canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
-    _main_texture: &mut sdl2::render::Texture,
-    streaming_texture: &mut sdl2::render::Texture,
-    nframes: &mut usize,
-) -> Result<(), String> {
-    const CENTER: f64 = MAIN_WINDOW_SIZE as f64 / 2.;
-    const SPEED: f64 = MAIN_WINDOW_SIZE as f64 / 500.;
-    const PERIOD: f64 = MAIN_WINDOW_SIZE as f64 / 10.;
-    const PI2: f64 = std::f64::consts::PI * 2.;
-
-    streaming_texture.with_lock(None, |pixels, pitch| {
-        for x in 0..MAIN_WINDOW_SIZE {
-            for y in 0..MAIN_WINDOW_SIZE {
-                let xc = CENTER - x as f64;
-                let yc = CENTER - y as f64;
-                let r = {
-                    let dist = (xc * xc + yc * yc).sqrt();
-                    let rate = SPEED * 2.5 * *nframes as f64;
-                    let cos = (PI2 * (dist - rate) / PERIOD).cos();
-                    255. * 0.5 * (1.0 + cos)
-                } as u8;
-                let g = {
-                    let dist = (xc * xc + yc * yc).sqrt();
-                    // let dist = xc * xc + yc * yc;
-                    let rate = SPEED * -0.5 * *nframes as f64;
-                    let cos = (PI2 * (dist - rate) / PERIOD).sin();
-                    150. * 0.5 * (1.0 + cos)
-                } as u8;
-                let b = {
-                    let dist = (xc * xc + yc * yc).sqrt();
-                    let rate = SPEED * *nframes as f64;
-                    let sin = (PI2 * (dist - rate) / PERIOD).sin();
-                    200. * 0.5 * (1.0 + sin)
-                } as u8;
-
-                let ind = y as usize * pitch + x as usize * 4;
-
-                pixels[ind + 0] = r;
-                pixels[ind + 1] = g;
-                pixels[ind + 2] = b;
-                pixels[ind + 3] = 255;
+    // Start the event loop, handle all events, and manage rendering ops's
+    // status. Also, keep track of and print framerate.
+    let mut now = Instant::now();
+    loop {
+        // Handle Events
+        let events = event_handler.handle_events();
+        for event in events {
+            // println!("Event: {}", event);
+            match event {
+                MainEvent::Quit(result) => {
+                    tx.send(ThreadMessage::Quit).unwrap();
+                    main_thread
+                        .join()
+                        .expect("rendering thread panicked")
+                        .unwrap();
+                    return result;
+                }
+                MainEvent::RenderOpFinish(op) => {
+                    let op = op.read().unwrap();
+                    let window = op.get_window();
+                    let mut window_mut = window.lock().unwrap();
+                    window_mut.present(op.get_present_buffer(), *op.get_rect());
+                    // Framerate
+                    println_framerate(&mut now);
+                }
+                MainEvent::RenderOpStart(op) => {
+                    tx.send(ThreadMessage::StartOp(op)).unwrap();
+                }
             }
         }
-    })?;
-    canvas.copy(streaming_texture, None, None)?;
-    *nframes += 1;
-    Ok(())
+    }
 }
 
-fn draw_graph(
-    canvas: &mut sdl2::render::Canvas<sdl2::video::Window>,
-    main_texture: &mut sdl2::render::Texture,
-    streaming_texture: &mut sdl2::render::Texture,
-    nframes: &mut usize,
-) -> Result<(), String> {
-
-    
-
-    Ok(())
+fn println_framerate(instant: &mut Instant) {
+    let time_elapsed = Instant::elapsed(instant).as_micros();
+    *instant = Instant::now();
+    let fr;
+    if time_elapsed == 0 {
+        fr = u128::MAX;
+    } else {
+        fr = 1_000_000 / time_elapsed;
+    }
+    println!("Framerate: {}", fr);
 }
