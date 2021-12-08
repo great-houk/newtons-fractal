@@ -180,8 +180,6 @@ mod mandelbrot {
             let y_offset = window_height / 2. - window_y;
             (x_ratio, x_offset, y_ratio, y_offset)
         }
-
-        
     }
 
     impl BasicOpImp for Mandelbrot {
@@ -313,7 +311,7 @@ mod mandelbrot {
                         // If we can't read the op, then it must be this
                         // so we finished, and there's no reason to not
                         // restart, so send true back
-                        if let Err(_) = op.try_read() {
+                        if op.try_read().is_err() {
                             ret = true;
                         }
                     }
