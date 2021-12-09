@@ -110,18 +110,14 @@ mod mandelbrot {
     use sdl2::rect::Rect;
     use std::sync::{Arc, Mutex, RwLock};
     struct Data {
-        x_ratio: f64,
-        x_offset: f64,
-        y_ratio: f64,
-        y_offset: f64,
+        zoom: f64,
         max_iter: usize,
-        //
-        window_width: f64,
-        window_height: f64,
-        window_x: f64,
-        window_y: f64,
-        width: u32,
-        height: u32,
+        center_x: f64,
+        center_y: f64,
+        window_wid: f64,
+        window_hei: f64,
+        fractal_wid: f64,
+        fractal_hei: f64,
     }
 
     pub struct Mandelbrot {
@@ -138,8 +134,10 @@ mod mandelbrot {
 
         fn init_data(width: u32, height: u32) -> Data {
             // Basic numbers
-            let window_height = 1.;
-            let window_width = window_height * (width as f64 / height as f64);
+            let window_wid = width as f64;
+            let window_hei = height as f64;
+            let fractal_hei = 2.;
+            let fractal_wid = fractal_hei * (window_wid / window_hei);
             // 0.001643721971153 − 0.822467633298876i
             // -0.761574 - 0.0847596i
             // -e/7 - e/20i
@@ -147,93 +145,76 @@ mod mandelbrot {
             // -1.74790375491685 + 0.00194820459426i
             // -0.52303294558693 + 0.52633610977926i
             //
-            let window_x = 0.001643721971153;
-            let window_y = -0.822467633298876;
-            // Calculate useful numbers from those
-            let (x_ratio, x_offset, y_ratio, y_offset) = Self::get_mandelbrot_vals(
-                window_width,
-                width,
-                window_x,
-                window_height,
-                height,
-                window_y,
-            );
+            let center_x = 0.001643721971153;
+            let center_y = -0.822467633298876;
             let max_iter = 1 << 8;
+            let zoom = 1. / (1 << 5) as f64;
             Data {
-                x_ratio,
-                x_offset,
-                y_ratio,
-                y_offset,
+                zoom,
                 max_iter,
-                //
-                window_width,
-                window_height,
-                window_x,
-                window_y,
-                width,
-                height,
+                center_x,
+                center_y,
+                window_wid,
+                window_hei,
+                fractal_wid,
+                fractal_hei,
             }
-        }
-
-        fn get_mandelbrot_vals(
-            window_width: f64,
-            width: u32,
-            window_x: f64,
-            window_height: f64,
-            height: u32,
-            window_y: f64,
-        ) -> (f64, f64, f64, f64) {
-            let x_ratio = window_width / width as f64;
-            let x_offset = window_width / 2. - window_x;
-            let y_ratio = window_height / height as f64;
-            let y_offset = window_height / 2. - window_y;
-            (x_ratio, x_offset, y_ratio, y_offset)
         }
 
         fn draw_iter(&self, pixel_x: usize, pixel_y: usize) -> Pixel {
             let Data {
-                x_ratio,
-                x_offset,
-                y_ratio,
-                y_offset,
+                center_x: cx,
+                center_y: cy,
+                window_wid,
+                window_hei,
+                zoom,
                 max_iter,
                 ..
             } = self.data;
-            // (((2 * x) / width) - 1) * (wind_wid / 2) =  (wind_wid / width) * x - wind_wid / 2 - x_off;
-            let x0 = x_ratio * pixel_x as f64 - x_offset;
-            let y0 = y_ratio * pixel_y as f64 - y_offset;
-            let mut x_coord = 0.;
-            let mut y_coord = 0.;
-            // let mut x_old = 0.;
-            // let mut y_old = 0.;
-            // let mut period = 0;
-            // const MAX_PERIOD: u16 = 0;
+            let mut dcx = (pixel_x << 1) as f64 / window_wid - 1.;
+            let mut dcy = (pixel_y << 1) as f64 / window_hei - 1.;
+            dcx *= zoom;
+            dcy *= zoom;
+            let mut zx = 0.;
+            let mut zy = 0.;
+            let mut dzx = 0.;
+            let mut dzy = 0.;
             let mut iteration = 0;
             let it_mod;
             // Here N = 2^8 is chosen as a reasonable bailout radius.
 
-            while x_coord * x_coord + y_coord * y_coord <= (1 << 16) as f64 && iteration < max_iter
+            /*
+            for( int i=0; i<6000; i++ )
             {
-                let x_temp = x_coord * x_coord - y_coord * y_coord + x0;
-                y_coord = 2. * x_coord * y_coord + y0;
-                x_coord = x_temp;
+                dz = cmul(2.0*z+dz,dz) + dc;
+                z  = cmul(z,z)+c; // this could be precomputed since it's constant for the whole image
 
-                // if x_coord == x_old && y_coord == y_old {
-                //     iteration = max_iter;
-                //     break;
-                // }
-                // period += 1;
-                // if period == MAX_PERIOD {
-                //     period = 0;
-                //     x_old = x_coord;
-                //     y_old = y_coord;
-                // }
+                // instead of checking for Wn to escape...
+                // if( dot(z+dz,z+dz)>4.0 ) { n=float(i); break; }
+                // ... we only check ΔZn, since Zn is periodic and can't escape
+                if( dot(dz,dz)>4.0 ) { n=float(i); break; }
+            }
+            */
 
+            while dzx * dzx + dzy * dzy < 4. && iteration < max_iter {
+                // let z = (a + b)(c + d) = (ac - bd) + (ad + bc)i;
+                // cmul(2.0*z+dz,dz) + dc
+                let x = 2. * cx + dzx;
+                let y = 2. * cy + dzy;
+                dzx = dzx * x - dzy * y + dcx;
+                dzy = dzx * y + dzy * x + dcy;
+                // let z = (a + b) ^ 2 = (a * a - b * b) + (2 * a * b)i
+                // cmul(z,z)+c
+                zx = zx * zx - zy * zy + cx;
+                zy = 2. * zx * zy + cy;
+                // Iteratate
                 iteration += 1;
             }
             // Used to avoid floating point issues with points inside the set.
             if iteration < max_iter {
                 // sqrt of inner term removed using log simplification rules.
+                let x_coord = zx + dzx;
+                let y_coord = zy + dzy;
                 let log_zn = (x_coord * x_coord + y_coord * y_coord).ln() / 2.;
                 let nu = (log_zn / std::f64::consts::LN_2).ln() / std::f64::consts::LN_2;
                 // Rearranging the potential function.
@@ -285,70 +266,28 @@ mod mandelbrot {
 
         fn zoom(&mut self, factor: f64) {
             let Data {
-                ref mut x_ratio,
-                ref mut x_offset,
-                ref mut y_ratio,
-                ref mut y_offset,
-                //
-                ref mut window_width,
-                ref mut window_height,
-                ref mut window_x,
-                ref mut window_y,
-                ref mut width,
-                ref mut height,
+                ref mut fractal_wid,
+                ref mut fractal_hei,
                 ..
             } = &mut self.data;
             //
-            *window_width /= factor;
-            *window_height /= factor;
-            // Calculate useful numbers from those
-            let (xr, xo, yr, yo) = Self::get_mandelbrot_vals(
-                *window_width,
-                *width,
-                *window_x,
-                *window_height,
-                *height,
-                *window_y,
-            );
-            *x_ratio = xr;
-            *x_offset = xo;
-            *y_ratio = yr;
-            *y_offset = yo;
+            *fractal_wid /= factor;
+            *fractal_hei /= factor;
         }
 
         fn translate(&mut self, x_percent: f64, y_percent: f64) {
             let Data {
-                ref mut x_ratio,
-                ref mut x_offset,
-                ref mut y_ratio,
-                ref mut y_offset,
-                //
-                ref mut window_width,
-                ref mut window_height,
-                ref mut window_x,
-                ref mut window_y,
-                ref mut width,
-                ref mut height,
+                ref mut fractal_wid,
+                ref mut fractal_hei,
+                ref mut center_x,
+                ref mut center_y,
                 ..
             } = &mut self.data;
             // Calc new window_x and window_y
-            let x_dist = *window_width * x_percent;
-            *window_x += x_dist;
-            let y_dist = *window_height * y_percent;
-            *window_y -= y_dist;
-            // Calculate useful numbers from those
-            let (xr, xo, yr, yo) = Self::get_mandelbrot_vals(
-                *window_width,
-                *width,
-                *window_x,
-                *window_height,
-                *height,
-                *window_y,
-            );
-            *x_ratio = xr;
-            *x_offset = xo;
-            *y_ratio = yr;
-            *y_offset = yo;
+            let x_dist = *fractal_wid * x_percent;
+            *center_x += x_dist;
+            let y_dist = *fractal_hei * y_percent;
+            *center_y -= y_dist;
         }
     }
 
@@ -401,23 +340,10 @@ mod mandelbrot {
                         s.buffer_ind = 0;
 
                         let d = &mut self.data;
-                        d.window_width *= wid as f64 / d.width as f64;
-                        d.window_height *= hei as f64 / d.height as f64;
-                        d.width = wid as u32;
-                        d.height = hei as u32;
-
-                        let (xr, xo, yr, yo) = Self::get_mandelbrot_vals(
-                            d.window_width,
-                            d.width,
-                            d.window_x,
-                            d.window_height,
-                            d.height,
-                            d.window_y,
-                        );
-                        d.x_ratio = xr;
-                        d.x_offset = xo;
-                        d.y_ratio = yr;
-                        d.y_offset = yo;
+                        d.fractal_wid *= wid as f64 / d.window_wid as f64;
+                        d.fractal_hei *= hei as f64 / d.window_hei as f64;
+                        d.window_wid = wid as f64;
+                        d.window_hei = hei as f64;
                     }
                     // User did some keyboard input
                     SdlEvent::Event(Event::KeyDown {
