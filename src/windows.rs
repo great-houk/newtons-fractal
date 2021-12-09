@@ -97,6 +97,7 @@ pub struct Window {
     texture: Texture,
     width: usize,
     height: usize,
+    id: u32,
     resize_func: Box<dyn ResizeFn>,
 }
 #[allow(dead_code)]
@@ -139,9 +140,10 @@ impl Window {
             (None, None) => Ok(()),
         }
         .map_err(|e| e.to_string())?;
+        let id = window.id();
         let mut canvas = window
             .into_canvas()
-            .present_vsync()
+            // .present_vsync()
             .build()
             .map_err(|e| e.to_string())?;
         let texture =
@@ -151,6 +153,7 @@ impl Window {
             width: builder.width as usize,
             height: builder.height as usize,
             texture,
+            id,
             resize_func: builder.resize_func,
         })
     }
@@ -162,6 +165,9 @@ impl Window {
     }
     pub fn size(&self) -> (usize, usize) {
         (self.width, self.height)
+    }
+    pub fn id(&self) -> u32 {
+        self.id
     }
     pub fn resized(&mut self, width: usize, height: usize) -> Result<(), String> {
         let (w, h) = (self.resize_func)(width, height);
