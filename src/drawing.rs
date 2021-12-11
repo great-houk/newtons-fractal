@@ -496,11 +496,11 @@ mod mandelbrot {
                 self.rect_divide(&mut rects, ind, i, pixels, pitch);
             }
             // Calc bottom pixels
-            for j in i_final..pixels.len() {
+            for (j, pixel) in pixels.iter_mut().enumerate().skip(i_final) {
                 let total_ind = j + ind;
                 let (pixel_x, pixel_y) = Self::ind_to_xy(total_ind, pitch);
                 let (color, _) = self.draw_iter(pixel_x, pixel_y);
-                pixels[j] = color;
+                *pixel = color;
             }
         }
         fn modify_data(&mut self) {}
