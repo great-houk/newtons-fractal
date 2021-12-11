@@ -25,7 +25,7 @@ mod render_backend {
             let pitch = pixels.dimensions().0;
             (slice, ind, pitch)
         }
-        fn draw_pixel(&self, x: usize, y: usize) -> Pixel;
+        fn draw(&self, pixels: &mut [Pixel], ind: usize, pitch: usize);
         fn modify_data(&mut self);
         fn handle_events(&mut self) -> bool;
         fn push_event(&self, event: SdlEvent);
@@ -104,7 +104,7 @@ mod render_backend {
         use super::drawing::draw_loop;
         use super::RenderOpReference;
         use std::sync::mpsc::{channel, Receiver, Sender};
-        use std::thread::{spawn, JoinHandle};
+        use std::thread::{Builder, JoinHandle};
 
         type Thread = (
             Vec<JoinHandle<()>>,
@@ -118,9 +118,12 @@ mod render_backend {
             for id in 0..thread_count {
                 let (ttx, rx) = channel();
                 let (tx, trx) = channel();
-                let handle = spawn(move || {
-                    draw_loop(ttx, trx, id, thread_count);
-                });
+                let handle = Builder::new()
+                    .name(format!("Render Thread {}", id))
+                    .spawn(move || {
+                        draw_loop(ttx, trx, id, thread_count);
+                    })
+                    .unwrap();
                 senders.push(tx);
                 receivers.push(rx);
                 handles.push(handle);
@@ -143,7 +146,7 @@ mod render_backend {
     }
 
     pub mod drawing {
-        use super::{RenderOp, RenderOpReference};
+        use super::RenderOpReference;
         use std::sync::mpsc::{Receiver, Sender};
 
         pub fn draw_loop(
@@ -157,28 +160,10 @@ mod render_backend {
                 // Get slice
                 let (slice, ind, pitch) = op.get_slice(id, thread_count);
                 // Modify pixels
-                draw_func(op.as_ref(), slice, ind, pitch);
+                op.draw(slice, ind, pitch);
                 // Release read and let main thread know
                 drop(op);
                 sender.send(()).unwrap();
-            }
-        }
-
-        fn draw_func(
-            op: &(dyn RenderOp + Send),
-            slice: &mut [(u8, u8, u8, u8)],
-            ind: usize,
-            pitch: usize,
-        ) {
-            for (i, pixel) in slice.iter_mut().enumerate() {
-                let total_ind = i + ind;
-                let (pixel_x, pixel_y) = {
-                    let x = total_ind % pitch;
-                    let y = total_ind / pitch;
-                    (x, y)
-                };
-                let color = op.draw_pixel(pixel_x, pixel_y);
-                *pixel = color;
             }
         }
     }
