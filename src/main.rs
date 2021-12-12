@@ -92,5 +92,9 @@ fn println_framerate(instant: &mut Instant) {
     } else {
         fr = 1_000_000 / time_elapsed;
     }
-    println!("Framerate: {}", fr);
+    if fr > 0 {
+        println!("Framerate: {}", fr);
+    } else {
+        println!("Time Elapsed: {}", time_elapsed / 1000);
+    }
 }
