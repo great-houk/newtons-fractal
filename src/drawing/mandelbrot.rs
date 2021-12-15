@@ -482,7 +482,7 @@ impl BasicOpImp for Mandelbrot {
                         Scancode::S => self.translate(0., -MOVE_AMOUNT),
                         Scancode::D => self.translate(MOVE_AMOUNT, 0.),
                         Scancode::Q => self.zoom(SCALE_COARSE),
-                        Scancode::E => self.zoom(SCALE_COARSE - 1.),
+                        Scancode::E => self.zoom(1. / SCALE_COARSE),
                         Scancode::Up => {
                             self.data.max_iter <<= 1;
                             println!("Scale: {}", (self.data.max_iter as f64).log(2.))
