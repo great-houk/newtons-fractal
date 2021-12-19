@@ -137,7 +137,7 @@ impl Mandelbrot {
             iteration = it as usize;
             it_mod = it % 1.;
         } else {
-            return ((0, 0, 50, 255), true);
+            return ((0, 0, 0, 255), true);
         }
         // Color choosing
         let (r, g, b) = {
